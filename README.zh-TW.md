@@ -23,7 +23,7 @@
 
 ### 方式 A：拖放批次檔（推薦，Windows 用戶）
 1.  直接將 Lite 版匯出的 `.json` 工作區檔案，拖曳到 [drag_and_drop_extract.bat](drag_and_drop_extract.bat) 上。
-2.  程式會自動執行提取，並在完成後自動為您開啟產生的 `output` 資料夾。
+2.  程式會自動在背景執行提取，完成後會自動關閉視窗。您可至本目錄下的 `output` 資料夾查看匯出檔案。
 
 ### 方式 B：命令列執行 (CLI)
 在終端機中執行以下 Node.js 指令：

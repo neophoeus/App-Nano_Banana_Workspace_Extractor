@@ -16,12 +16,6 @@ if "%~1" == "" (
     exit /b
 )
 
-echo ----------------------------------------------------------------
-echo   Starting workspace extraction...
-echo   Source file: "%~1"
-echo ----------------------------------------------------------------
-echo.
-
 :: Run the node extractor script, passing the dragged file
 node "%~dp0extractor.js" "%~1"
 
@@ -33,16 +27,5 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-echo.
-echo [SUCCESS] Files successfully extracted to the "./output" folder!
-echo Opening output directory...
-echo.
-
-:: Automatically open the output folder in Windows Explorer
-if exist "%~dp0output" (
-    explorer.exe "%~dp0output"
-) else (
-    explorer.exe "%~dp0"
-)
-
-pause
+:: Auto-close terminal on success
+exit

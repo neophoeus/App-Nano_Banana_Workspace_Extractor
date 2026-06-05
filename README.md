@@ -23,7 +23,7 @@ An image and prompt extractor for Workspace files exported from Nano Banana Ultr
 
 ### Option A: Drag & Drop (Windows)
 1.  Drag and drop your exported `.json` workspace file onto [drag_and_drop_extract.bat](drag_and_drop_extract.bat).
-2.  The script runs the extraction automatically and opens the `output` directory upon completion.
+2.  The script runs the extraction automatically and closes the window upon completion. The extracted files will be in the `output` folder.
 
 ### Option B: CLI command
 Run the following command in your terminal using Node.js:
