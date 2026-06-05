@@ -1,0 +1,15 @@
+# Output files
+/output/
+
+# Temp / Test files
+dummy_workspace.json
+
+# Node dependencies (just in case)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System files
+.DS_Store
+Thumbs.db
