@@ -2,7 +2,7 @@
 
 [English](README.md) | 繁體中文
 
-這是一個專門為 **Nano Banana Ultra Lite** 匯出的 `.json` 工作區檔案設計的圖片與提示詞提取工具。
+這是一個專門為 **Nano Banana Ultra *lite*** 匯出的 `.json` 工作區檔案設計的圖片與提示詞提取工具。
 
 ---
 

@@ -2,7 +2,7 @@
 
 English | [繁體中文](README.zh-TW.md)
 
-An image and prompt extractor for Workspace files exported from Nano Banana Ultra lite.
+An image and prompt extractor for Workspace files exported from Nano Banana Ultra *lite*.
 
 ---
 

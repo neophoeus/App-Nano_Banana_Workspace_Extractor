@@ -1,6 +1,6 @@
 /**
  * extractor.js
- * CLI Workspace Extractor for Nano Banana Ultra Lite
+ * CLI Workspace Extractor for Nano Banana Ultra lite
  * Usage: node extractor.js <workspace-json-path> [output-dir]
  */
 
@@ -10,7 +10,7 @@ const path = require('path');
 // Print usage information
 function printUsage() {
     console.log('\n================================================================');
-    console.log('  Nano Banana Ultra Lite - 工作區檔案專用匯出器 (CLI)');
+    console.log('  Nano Banana Ultra lite - 工作區檔案專用匯出器 (CLI)');
     console.log('================================================================');
     console.log('使用方法:');
     console.log('  node extractor.js <workspace_file.json> [output_directory]');
@@ -105,7 +105,7 @@ function main() {
         
         let txtContent = '';
         txtContent += `==================================================\n`;
-        txtContent += `  Nano Banana Ultra Lite - 圖片生成參數\n`;
+        txtContent += `  Nano Banana Ultra lite - 圖片生成參數\n`;
         txtContent += `==================================================\n`;
         txtContent += `圖片檔名: ${filename}\n`;
         txtContent += `提示詞 (Prompt):\n${item.prompt || ''}\n\n`;

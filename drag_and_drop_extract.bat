@@ -1,5 +1,5 @@
 @echo off
-title Nano Banana Ultra Lite Workspace Extractor
+title Nano Banana Ultra lite Workspace Extractor
 
 :: Check if a file was dragged onto the bat file
 if "%~1" == "" (
