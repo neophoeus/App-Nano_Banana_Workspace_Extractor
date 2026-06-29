@@ -20,6 +20,166 @@ function printUsage() {
     console.log('================================================================\n');
 }
 
+// A fast and lightweight JSON parser directly on a Buffer to avoid V8 string limit errors
+function parseWorkspaceJsonBuffer(buf) {
+    let pos = 0;
+    const len = buf.length;
+
+    function skipWhitespace() {
+        while (pos < len) {
+            const b = buf[pos];
+            if (b === 0x20 || b === 0x09 || b === 0x0A || b === 0x0D) { // space, tab, LF, CR
+                pos++;
+            } else {
+                break;
+            }
+        }
+    }
+
+    function parseString(isDataUrl) {
+        pos++; // skip "
+        const start = pos;
+        let hasEscapes = false;
+        while (pos < len) {
+            const b = buf[pos];
+            if (b === 0x22) { // "
+                const end = pos;
+                pos++; // skip "
+                if (isDataUrl) {
+                    return { start, end };
+                }
+                if (hasEscapes) {
+                    // Slow path: decode and parse with JSON.parse to handle escapes correctly
+                    return JSON.parse(buf.slice(start - 1, end + 1).toString('utf8'));
+                } else {
+                    // Fast path: direct toString
+                    return buf.toString('utf8', start, end);
+                }
+            } else if (b === 0x5C) { // \
+                hasEscapes = true;
+                pos += 2; // skip escape char
+            } else {
+                pos++;
+            }
+        }
+        throw new Error('Unterminated string in JSON');
+    }
+
+    function parseValue(isDataUrl) {
+        skipWhitespace();
+        if (pos >= len) throw new Error('Unexpected end of JSON');
+        const b = buf[pos];
+        if (b === 0x22) { // "
+            return parseString(isDataUrl);
+        } else if (b === 0x7B) { // {
+            return parseObject();
+        } else if (b === 0x5B) { // [
+            return parseArray();
+        } else if (b === 0x74) { // t (true)
+            if (pos + 3 < len && buf[pos+1] === 0x72 && buf[pos+2] === 0x75 && buf[pos+3] === 0x65) {
+                pos += 4;
+                return true;
+            }
+        } else if (b === 0x66) { // f (false)
+            if (pos + 4 < len && buf[pos+1] === 0x61 && buf[pos+2] === 0x6C && buf[pos+3] === 0x73 && buf[pos+4] === 0x65) {
+                pos += 5;
+                return false;
+            }
+        } else if (b === 0x6E) { // n (null)
+            if (pos + 3 < len && buf[pos+1] === 0x75 && buf[pos+2] === 0x6C && buf[pos+3] === 0x6C) {
+                pos += 4;
+                return null;
+            }
+        } else {
+            // Number (or invalid)
+            let start = pos;
+            while (pos < len) {
+                const b = buf[pos];
+                if ((b >= 0x30 && b <= 0x39) || b === 0x2D || b === 0x2E || b === 0x2B || b === 0x65 || b === 0x45) {
+                    pos++;
+                } else {
+                    break;
+                }
+            }
+            if (pos === start) {
+                throw new Error('Unexpected token: ' + String.fromCharCode(buf[start]));
+            }
+            const numStr = buf.toString('utf8', start, pos);
+            const num = Number(numStr);
+            if (isNaN(num)) {
+                throw new Error('Invalid number or value: ' + numStr);
+            }
+            return num;
+        }
+        throw new Error('Unexpected token: ' + String.fromCharCode(b));
+    }
+
+    function parseObject() {
+        pos++; // skip {
+        const obj = {};
+        skipWhitespace();
+        if (pos < len && buf[pos] === 0x7D) { // }
+            pos++; // skip }
+            return obj;
+        }
+        while (pos < len) {
+            skipWhitespace();
+            if (pos >= len || buf[pos] !== 0x22) { // "
+                throw new Error('Expected string key in object, got: ' + (pos >= len ? 'EOF' : String.fromCharCode(buf[pos])));
+            }
+            const key = parseString(false);
+            skipWhitespace();
+            if (pos >= len || buf[pos] !== 0x3A) { // :
+                throw new Error('Expected colon after key in object, got: ' + (pos >= len ? 'EOF' : String.fromCharCode(buf[pos])));
+            }
+            pos++; // skip :
+            const val = parseValue(key === 'dataUrl');
+            obj[key] = val;
+            skipWhitespace();
+            if (pos < len && buf[pos] === 0x7D) { // }
+                pos++;
+                return obj;
+            } else if (pos < len && buf[pos] === 0x2C) { // ,
+                pos++;
+            } else {
+                throw new Error('Expected comma or closing brace in object, got: ' + (pos >= len ? 'EOF' : String.fromCharCode(buf[pos])));
+            }
+        }
+        throw new Error('Unterminated object in JSON');
+    }
+
+    function parseArray() {
+        pos++; // skip [
+        const arr = [];
+        skipWhitespace();
+        if (pos < len && buf[pos] === 0x5D) { // ]
+            pos++; // skip ]
+            return arr;
+        }
+        while (pos < len) {
+            const val = parseValue(false);
+            arr.push(val);
+            skipWhitespace();
+            if (pos < len && buf[pos] === 0x5D) { // ]
+                pos++;
+                return arr;
+            } else if (pos < len && buf[pos] === 0x2C) { // ,
+                pos++;
+            } else {
+                throw new Error('Expected comma or closing bracket in array, got: ' + (pos >= len ? 'EOF' : String.fromCharCode(buf[pos])));
+            }
+        }
+        throw new Error('Unterminated array in JSON');
+    }
+
+    const res = parseValue(false);
+    skipWhitespace();
+    if (pos < len) {
+        throw new Error('Trailing garbage after JSON');
+    }
+    return res;
+}
+
 // Main execution function
 function main() {
     const args = process.argv.slice(2);
@@ -38,9 +198,10 @@ function main() {
     }
 
     let workspaceData;
+    let fileBuffer;
     try {
-        const fileContent = fs.readFileSync(jsonPath, 'utf8');
-        workspaceData = JSON.parse(fileContent);
+        fileBuffer = fs.readFileSync(jsonPath);
+        workspaceData = parseWorkspaceJsonBuffer(fileBuffer);
     } catch (error) {
         console.error(`錯誤: 無法解析 JSON 檔案. 原因: ${error.message}`);
         process.exit(1);
@@ -81,13 +242,35 @@ function main() {
             return false;
         }
 
-        const dataUrl = imageRecord.dataUrl;
-        const matches = dataUrl.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-        if (!matches) {
-            return false;
+        const dataUrlInfo = imageRecord.dataUrl;
+        let base64Data;
+
+        // Handle when dataUrl is parsed as a slice object { start, end }
+        if (dataUrlInfo && typeof dataUrlInfo === 'object' && 'start' in dataUrlInfo && 'end' in dataUrlInfo) {
+            let commaPos = -1;
+            for (let i = dataUrlInfo.start; i < dataUrlInfo.end; i++) {
+                if (fileBuffer[i] === 0x2C) { // ','
+                    commaPos = i;
+                    break;
+                }
+            }
+            if (commaPos === -1) {
+                return false;
+            }
+            const prefix = fileBuffer.slice(dataUrlInfo.start, commaPos).toString('ascii');
+            if (!prefix.startsWith('data:') || !prefix.includes(';base64')) {
+                return false;
+            }
+            base64Data = fileBuffer.slice(commaPos + 1, dataUrlInfo.end).toString('ascii');
+        } else {
+            // Fallback for regular string dataUrl
+            const matches = dataUrlInfo.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+            if (!matches) {
+                return false;
+            }
+            base64Data = matches[2];
         }
 
-        const base64Data = matches[2];
         const imageBuffer = Buffer.from(base64Data, 'base64');
 
         const targetPath = path.join(outputDir, filename);
