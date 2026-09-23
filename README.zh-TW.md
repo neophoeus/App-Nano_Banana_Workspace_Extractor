@@ -1,4 +1,4 @@
-# Nano Banana 工作區檔案提取與中繼資料工具 `v1.0.0`
+# Nano Banana 工作區檔案提取與中繼資料工具 `v1.0.1`
 
 [English](README.md) | 繁體中文 | [更新日誌 (Changelog)](CHANGELOG.md)
 

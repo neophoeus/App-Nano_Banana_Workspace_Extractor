@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.1 - 2026-09-23
+
+- Release title: Nano Banana Workspace Extractor 1.0.1 - Windows Batch Script Encoding Resilience & Zero-Config Streamlining
+- Release summary:
+    - **Windows Batch Script Codepage Resilience (`drag_and_drop_extract.bat`, `drag_and_drop_read_metadata.bat`)**: Resolved an issue in Windows Command Prompt (CMD) where `chcp 65001` combined with multi-byte UTF-8 Chinese characters caused CMD's internal byte-seek pointer to drift across Traditional Chinese Windows environments (CP950), resulting in command parsing failures (`'直接將一個或多個' is not recognized`). Refactored batch script wrappers to use clean ASCII headers with `goto` branching and removed parenthesis blocks, completely preventing syntax and character offset collisions across all localized Windows code pages while delegating full UTF-8 Traditional Chinese output directly to Node.js.
+    - **Pure Zero-Dependency Streamlining**: Formally pruned redundant npm package manifests (`package.json`, `package-lock.json`) from the repository, reinforcing the 100% zero-dependency, zero-configuration green portable tool philosophy.
+
 ## v1.0.0 - 2026-09-23
 
 - Release title: Nano Banana Workspace Extractor 1.0.0 - Pure PNG Metadata Embedding, Metadata Readers Suite & Batch Processing Upgrade

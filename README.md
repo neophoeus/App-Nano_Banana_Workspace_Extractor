@@ -1,4 +1,4 @@
-# Nano Banana Workspace Extractor & Metadata Suite `v1.0.0`
+# Nano Banana Workspace Extractor & Metadata Suite `v1.0.1`
 
 English | [繁體中文](README.zh-TW.md) | [Changelog](CHANGELOG.md)
 

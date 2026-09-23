@@ -1,53 +1,38 @@
 @echo off
-chcp 65001 >nul
-title Nano Banana Ultra - 工作區檔案提取器 (Workspace Extractor)
+title Nano Banana Ultra - Workspace Extractor
 
-:: Check if Node.js is installed
-where node >nul 2>nul
-if %errorlevel% neq 0 (
-    echo ================================================================
-    echo   [錯誤] 找不到 Node.js 執行環境！
-    echo ================================================================
-    echo   本工具需要 Node.js 才能運行。
-    echo   請至官方網站下載並安裝 Node.js: https://nodejs.org/
-    echo ================================================================
-    echo.
-    pause
-    exit /b 1
-)
+if not "%~1" == "" goto RUN_EXTRACT
 
-:: Check if a file was dragged onto the bat file
-if "%~1" == "" (
-    echo ================================================================
-    echo   Nano Banana Ultra - 工作區檔案提取器
-    echo ================================================================
-    echo   使用方法：
-    echo     直接將一個或多個 .json 工作區檔案拖曳到這個批次檔上！
-    echo.
-    echo   範例：
-    echo     [拖曳 workspace.json] -^> [drag_and_drop_extract.bat]
-    echo ================================================================
-    echo.
-    pause
-    exit /b
-)
+echo ================================================================
+echo   Nano Banana Ultra - Workspace Extractor
+echo ================================================================
+echo   Please drag and drop your workspace .json file(s) onto this bat!
+echo.
+echo   Example:
+echo     Drag [workspace.json] onto [drag_and_drop_extract.bat]
+echo ================================================================
+echo.
+pause
+exit /b 0
 
-:: Run node extractor with all dragged arguments
+:RUN_EXTRACT
 node "%~dp0extractor.js" %*
 
 if %errorlevel% neq 0 (
     echo.
-    echo [ERROR] 提取過程發生錯誤！請檢查上方錯誤訊息。
+    echo [ERROR] Extraction failed! Please check the error messages above.
     echo.
     pause
-    exit /b 1
+    exit /b %errorlevel%
 )
 
-echo ----------------------------------------------------------------
-echo   提取完成！按任意鍵開啟 output 目錄，或直接按右上角 [X] 關閉...
-echo ----------------------------------------------------------------
+echo.
+echo ================================================================
+echo   Extraction complete!
+echo   Press any key to open the output folder, or close this window.
+echo ================================================================
 pause >nul
 if exist "%~dp0output" (
     start "" "%~dp0output"
 )
-exit
+exit /b 0
