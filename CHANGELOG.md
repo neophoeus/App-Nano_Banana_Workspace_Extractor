@@ -13,7 +13,6 @@
         - Resolved a bug where thumbnails (`.jpg`) were misclassified and leaked into the output folder due to extension mismatches with original PNG images.
         - Strictly isolated extraction to generated content (`item.savedFilename`, variant `output-image`, and `thought-image`), completely suppressing thumbnails and staged reference assets (`snapshot.stagedAssets`).
         - Enforced filename sanitization with `path.basename` to prevent path traversal attacks.
-    - **Modern Engineering & NPM Packaging (`package.json`, `package-lock.json`, `test_extraction.js`)**: Standardized the project with `package.json` and `package-lock.json` (zero external dependencies), npm scripts (`npm test`, `npm start`, `npm run read`), and expanded integration test suites asserting 100% pass rate across mock snapshots and real Nano Banana Ultra workspace snapshot fixtures.
 
 ## v0.4.1 - 2026-09-23
 
