@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { readPngMetadata } = require('./reader');
+const { readPngMetadata, readJpegMetadata, readImageMetadata } = require('./reader');
 
 const TEST_JSON_PATH = path.join(__dirname, 'dummy_workspace.json');
 const OUTPUT_DIR = path.join(__dirname, 'output');
@@ -105,6 +105,33 @@ const mockWorkspace = {
                 size: '2K',
                 createdAt: Date.now(),
                 thoughts: '思考過程：此項目沒有生成任何圖片，因此不應儲存任何檔案。'
+            },
+            {
+                // Item 5: Real Gemini 3.1 Flash Image JPEG generation
+                id: 'item_5_gemini_jpg',
+                prompt: '真實 Gemini JPEG 圖片 🍌📸',
+                model: 'gemini-3.1-flash-image',
+                style: 'Photorealistic',
+                aspectRatio: '16:9',
+                size: '4K',
+                mode: 'Text to Image',
+                executionMode: 'single-turn',
+                temperature: 0.9,
+                thinkingLevel: 'deep',
+                createdAt: Date.now() - 2000,
+                savedFilename: 'banana_gemini_raw.jpg',
+                thumbnailSavedFilename: 'banana_gemini-thumbnail.jpg',
+                text: '這是一張真實由 Gemini 產出的 JPEG 格式圖片',
+                thoughts: '思考過程：Gemini 直接輸出 data:image/jpeg;base64 二進位流，測試 COM 標記內嵌。',
+                resultParts: [
+                    {
+                        sequence: 1,
+                        kind: 'output-image',
+                        imageUrl: '',
+                        mimeType: 'image/jpeg',
+                        savedFilename: 'banana_gemini_variant.jpg'
+                    }
+                ]
             }
         ],
         stagedAssets: [
@@ -137,6 +164,18 @@ const mockWorkspace = {
                 dataUrl: testPngBase64,
                 savedAt: Date.now() - 5000
             },
+            'banana_gemini_raw.jpg': {
+                dataUrl: testJpgBase64,
+                savedAt: Date.now() - 2000
+            },
+            'banana_gemini-thumbnail.jpg': {
+                dataUrl: testJpgBase64,
+                savedAt: Date.now() - 2000
+            },
+            'banana_gemini_variant.jpg': {
+                dataUrl: testJpgBase64,
+                savedAt: Date.now() - 2000
+            },
             'banana_stage_reference.png': {
                 dataUrl: testPngBase64,
                 savedAt: Date.now() - 25000
@@ -168,7 +207,9 @@ try {
         'banana_yellow.png',
         'banana_space-thought-0.png',
         'banana_primary.png',
-        'banana_variant-1.png'
+        'banana_variant-1.png',
+        'banana_gemini_raw.jpg',
+        'banana_gemini_variant.jpg'
     ];
 
     let testPassed = true;
@@ -193,6 +234,7 @@ try {
     // Verify thumbnails and staged assets are completely filtered out
     const forbiddenFiles = [
         'banana_yellow-thumbnail.jpg',
+        'banana_gemini-thumbnail.jpg',
         'banana_stage_reference.png'
     ];
     forbiddenFiles.forEach(file => {
@@ -205,9 +247,9 @@ try {
     });
 
     // 4. Verify embedded PNG metadata using reader.js
-    console.log('\n[Test 2] Verifying embedded PNG metadata via reader.js...');
+    console.log('\n[Test 2a] Verifying embedded PNG metadata via reader.js...');
     const yellowPngBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_yellow.png'));
-    const yellowMeta = readPngMetadata(yellowPngBuf);
+    const yellowMeta = readImageMetadata(yellowPngBuf);
 
     if (yellowMeta.nano_banana_meta) {
         const parsed = JSON.parse(yellowMeta.nano_banana_meta);
@@ -223,26 +265,26 @@ try {
             parsed.text === '這是一張可愛香蕉的模型說明文字' &&
             parsed.thoughts.includes('正常繪製成品')
         ) {
-            console.log('  ✓ [Metadata 驗證] banana_yellow.png 內嵌結構化資料完全符合預期！');
+            console.log('  ✓ [PNG Metadata 驗證] banana_yellow.png 內嵌結構化資料完全符合預期！');
         } else {
-            console.error('  ❌ [Metadata 驗證] banana_yellow.png 內嵌資料不符:', parsed);
+            console.error('  ❌ [PNG Metadata 驗證] banana_yellow.png 內嵌資料不符:', parsed);
             testPassed = false;
         }
     } else {
-        console.error('  ❌ [Metadata 驗證] 未找到 nano_banana_meta 區塊！');
+        console.error('  ❌ [PNG Metadata 驗證] 未找到 nano_banana_meta 區塊！');
         testPassed = false;
     }
 
     if (yellowMeta.parameters && yellowMeta.parameters.includes('可愛的黃色小香蕉 🍌')) {
-        console.log('  ✓ [相容性驗證] banana_yellow.png 包含標準 AI parameters 區塊！');
+        console.log('  ✓ [PNG 相容性驗證] banana_yellow.png 包含標準 AI parameters 區塊！');
     } else {
-        console.error('  ❌ [相容性驗證] 缺少 parameters 區塊！');
+        console.error('  ❌ [PNG 相容性驗證] 缺少 parameters 區塊！');
         testPassed = false;
     }
 
     // Verify thinking image metadata
     const spacePngBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_space-thought-0.png'));
-    const spaceMeta = readPngMetadata(spacePngBuf);
+    const spaceMeta = readImageMetadata(spacePngBuf);
     if (spaceMeta.nano_banana_meta && spaceMeta.nano_banana_meta.includes('太空中的香蕉船 🚀')) {
         console.log('  ✓ [思考圖驗證] banana_space-thought-0.png 思考圖內嵌參數正確！');
     } else {
@@ -250,11 +292,45 @@ try {
         testPassed = false;
     }
 
+    // Verify embedded JPEG metadata using reader.js
+    console.log('\n[Test 2b] Verifying embedded JPEG COM metadata via reader.js...');
+    const geminiJpgBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_gemini_raw.jpg'));
+    const geminiMeta = readImageMetadata(geminiJpgBuf);
+
+    if (geminiMeta.nano_banana_meta) {
+        const parsed = JSON.parse(geminiMeta.nano_banana_meta);
+        if (
+            parsed.prompt === '真實 Gemini JPEG 圖片 🍌📸' &&
+            parsed.model === 'gemini-3.1-flash-image' &&
+            parsed.style === 'Photorealistic' &&
+            parsed.aspectRatio === '16:9' &&
+            parsed.size === '4K' &&
+            parsed.temperature === 0.9 &&
+            parsed.text.includes('Gemini 產出的 JPEG') &&
+            parsed.thoughts.includes('測試 COM 標記內嵌')
+        ) {
+            console.log('  ✓ [JPEG Metadata 驗證] banana_gemini_raw.jpg 內嵌 COM 結構化資料完全符合預期！');
+        } else {
+            console.error('  ❌ [JPEG Metadata 驗證] banana_gemini_raw.jpg 內嵌資料不符:', parsed);
+            testPassed = false;
+        }
+    } else {
+        console.error('  ❌ [JPEG Metadata 驗證] 未找到 nano_banana_meta COM 區塊！');
+        testPassed = false;
+    }
+
+    if (geminiMeta.parameters && geminiMeta.parameters.includes('真實 Gemini JPEG 圖片 🍌📸')) {
+        console.log('  ✓ [JPEG 相容性驗證] banana_gemini_raw.jpg 包含標準 AI parameters COM 區塊！');
+    } else {
+        console.error('  ❌ [JPEG 相容性驗證] 缺少 parameters 區塊！');
+        testPassed = false;
+    }
+
     // 5. Test optional --txt flag
     console.log('\n[Test 3] Executing extractor.js with optional --txt flag...');
     execSync(`node extractor.js "${TEST_JSON_PATH}" -o "${OUTPUT_TXT_DIR}" --txt`, { stdio: 'inherit' });
     const txtOutputFiles = fs.readdirSync(OUTPUT_TXT_DIR);
-    if (txtOutputFiles.includes('banana_yellow.txt') && txtOutputFiles.includes('banana_yellow.png')) {
+    if (txtOutputFiles.includes('banana_yellow.txt') && txtOutputFiles.includes('banana_yellow.png') && txtOutputFiles.includes('banana_gemini_raw.txt')) {
         const txtContent = fs.readFileSync(path.join(OUTPUT_TXT_DIR, 'banana_yellow.txt'), 'utf8');
         if (txtContent.includes('可愛的黃色小香蕉 🍌') && txtContent.includes('生成模式 (Mode): Text to Image')) {
             console.log('  ✓ [--txt 旗標驗證] 成功輸出豐富格式之 .txt 提示詞檔！');
@@ -284,6 +360,39 @@ try {
             testPassed = false;
         }
         fs.rmSync(REAL_OUTPUT_DIR, { recursive: true, force: true });
+    }
+
+    // 7. Test with user's real 283MB Gemini snapshot (if present on machine)
+    const userWorkspacePath = 'D:\\Downloads\\nano-banana-workspace-2026-09-23T02-20-32.json';
+    if (fs.existsSync(userWorkspacePath)) {
+        console.log('\n[Test 5] Testing with user real workspace (283MB with 50 JPEG images)...');
+        const USER_OUTPUT_DIR = path.join(__dirname, 'output_user_test');
+        execSync(`node extractor.js "${userWorkspacePath}" -o "${USER_OUTPUT_DIR}"`, { stdio: 'inherit' });
+        const userFiles = fs.readdirSync(USER_OUTPUT_DIR);
+        console.log(`User workspace output extracted: ${userFiles.length} files`);
+        const jpgFiles = userFiles.filter(f => f.toLowerCase().endsWith('.jpg') || f.toLowerCase().endsWith('.jpeg'));
+        if (jpgFiles.length > 0) {
+            console.log(`  ✓ [真實 JPEG 提取] 成功提取 ${jpgFiles.length} 張真實 JPEG 圖片！`);
+            // Read metadata from first extracted jpg
+            const sampleJpg = path.join(USER_OUTPUT_DIR, jpgFiles[0]);
+            const sampleBuf = fs.readFileSync(sampleJpg);
+            const sampleMeta = readImageMetadata(sampleBuf);
+            if (sampleMeta.nano_banana_meta || sampleMeta.parameters) {
+                console.log(`  ✓ [真實 JPEG Metadata 驗證] 成功讀取 sample: "${jpgFiles[0]}"`);
+                if (sampleMeta.nano_banana_meta) {
+                    const parsed = JSON.parse(sampleMeta.nano_banana_meta);
+                    console.log(`    提示詞: "${parsed.prompt ? parsed.prompt.substring(0, 40) : ''}..."`);
+                    console.log(`    模型: ${parsed.model} | 比例: ${parsed.aspectRatio} | 尺寸: ${parsed.size}`);
+                }
+            } else {
+                console.error(`  ❌ [真實 JPEG Metadata 驗證] 未在 ${jpgFiles[0]} 中找到中繼資料！`);
+                testPassed = false;
+            }
+        } else {
+            console.error('  ❌ [真實 JPEG 提取] 未提取出任何 .jpg 檔案！');
+            testPassed = false;
+        }
+        fs.rmSync(USER_OUTPUT_DIR, { recursive: true, force: true });
     }
 
     if (testPassed) {

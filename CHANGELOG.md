@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.1.0 - 2026-09-23
+
+- Release title: Nano Banana Workspace Extractor 1.1.0 - Full PNG & JPEG Dual-Format Lossless Metadata Embedding & Reading
+- Release summary:
+    - **Native JPEG Lossless Metadata Injection (`extractor.js`)**: Accommodating native Gemini model outputs (`data:image/jpeg;base64` from `gemini-3.1-flash-image`), implemented zero-dependency JPEG COM (`0xFF 0xFE`, Comment) segment injection. Prompts, model parameters, aspect ratios, execution modes, styles, and full thinking logs are embedded directly after SOI/APP0 markers without re-encoding or compressing image pixels, ensuring 100% lossless image fidelity.
+    - **Intelligent Dual-Format Auto-Routing (`extractor.js`)**: Automatically detects binary image signatures (`0x89 0x50 0x4E 0x47` for PNG vs `0xFF 0xD8` for JPEG) and transparently routes to either PNG `iTXt` or JPEG COM embedding.
+    - **Universal CLI & Drag-and-Drop Metadata Reader (`reader.js`, `drag_and_drop_read_metadata.bat`)**: Upgraded to seamlessly read and inspect both `.png` and `.jpg` / `.jpeg` files. Parses JPEG COM markers for `nano_banana_meta` and standard `parameters` blocks, displaying full generation prompts and parameters in the console.
+    - **Dual-Format Offline Web Viewer (`viewer.html`)**: Expanded file dropzone and native `ArrayBuffer` parsing to support both PNG and JPEG images. Users can drag and drop `.png`, `.jpg`, and `.jpeg` images into the viewer for instant preview, parameter inspection, and one-click prompt copying.
+    - **Comprehensive Test Suite & Real 283MB Snapshot Verification (`test_extraction.js`)**: Added test cases for mock JPEG generation and integration verification against real 283MB Gemini workspace snapshots containing 50 native JPEG images.
+
 ## v1.0.1 - 2026-09-23
 
 - Release title: Nano Banana Workspace Extractor 1.0.1 - Windows Batch Script Encoding Resilience & Zero-Config Streamlining

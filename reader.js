@@ -1,7 +1,7 @@
 /**
  * reader.js
- * Pure Node.js PNG Metadata Reader for Nano Banana Ultra lite images
- * Usage: node reader.js <image1.png> [image2.png ...]
+ * Pure Node.js PNG & JPEG Metadata Reader for Nano Banana Ultra lite images
+ * Usage: node reader.js <image1.png|image1.jpg> [image2.jpg ...]
  */
 
 const fs = require('fs');
@@ -98,6 +98,105 @@ function readPngMetadata(buf) {
 }
 
 /**
+ * Extract text metadata from JPEG COM (Comment 0xFF 0xFE) segments.
+ * @param {Buffer} buf - Raw JPEG buffer
+ * @returns {Record<string, string>} Key-value map of keyword -> text
+ */
+function readJpegMetadata(buf) {
+    if (!buf || buf.length < 4) {
+        throw new Error('檔案太小，不是合法的 JPEG 檔案。');
+    }
+
+    // Check JPEG SOI marker: FF D8
+    if (buf[0] !== 0xFF || buf[1] !== 0xD8) {
+        throw new Error('此檔案不是合法的 JPEG 圖片格式（缺少 SOI 簽名 0xFFD8）。');
+    }
+
+    const metadata = {};
+    let pos = 2;
+    const len = buf.length;
+
+    while (pos + 4 <= len) {
+        if (buf[pos] !== 0xFF) {
+            pos++;
+            continue;
+        }
+
+        // Skip extra 0xFF padding bytes
+        while (pos < len && buf[pos] === 0xFF) {
+            pos++;
+        }
+        if (pos >= len) break;
+
+        const marker = buf[pos++];
+
+        // Markers without length
+        if (marker === 0xD9) {
+            break; // EOI
+        }
+        if (marker === 0xDA) {
+            break; // SOS (Start of Scan - entropy image data begins)
+        }
+        if ((marker >= 0xD0 && marker <= 0xD7) || marker === 0x00) {
+            continue; // RST or escaped byte
+        }
+
+        // Variable length markers
+        if (pos + 2 > len) break;
+        const segLen = buf.readUInt16BE(pos);
+        if (segLen < 2 || pos + segLen > len) {
+            break; // Invalid segment length
+        }
+
+        const payloadStart = pos + 2;
+        const payloadEnd = pos + segLen;
+
+        if (marker === 0xFE) { // COM (Comment)
+            const payload = buf.subarray(payloadStart, payloadEnd).toString('utf8');
+            const newlineIdx = payload.indexOf('\n');
+            if (newlineIdx !== -1) {
+                const prefix = payload.substring(0, newlineIdx).trim();
+                const content = payload.substring(newlineIdx + 1);
+                if (prefix === 'nano_banana_meta' || prefix === 'parameters') {
+                    metadata[prefix] = content;
+                } else {
+                    metadata[prefix || 'comment'] = content;
+                }
+            } else {
+                metadata['comment'] = payload;
+            }
+        }
+
+        pos += segLen;
+    }
+
+    return metadata;
+}
+
+/**
+ * Universal metadata reader that automatically identifies image format (PNG or JPEG).
+ * @param {Buffer} buf
+ * @returns {Record<string, string>}
+ */
+function readImageMetadata(buf) {
+    if (!buf || buf.length < 4) {
+        throw new Error('檔案太小，無法辨識圖片格式。');
+    }
+
+    // PNG signature: 89 50 4E 47
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
+        return readPngMetadata(buf);
+    }
+
+    // JPEG signature: FF D8
+    if (buf[0] === 0xFF && buf[1] === 0xD8) {
+        return readJpegMetadata(buf);
+    }
+
+    throw new Error('不支援或未知的圖片格式（僅支援 PNG 與 JPEG / JPG 圖片）。');
+}
+
+/**
  * Display formatted metadata of an image file.
  * @param {string} imagePath
  */
@@ -110,7 +209,7 @@ function inspectImageFile(imagePath) {
 
     const filename = path.basename(fullPath);
     console.log('\n================================================================');
-    console.log(`  Nano Banana Ultra - 圖片中繼資料檢視器 (PNG Metadata Reader)`);
+    console.log(`  Nano Banana Ultra - 圖片中繼資料檢視器 (Metadata Reader)`);
     console.log('================================================================');
     console.log(`檔案: ${filename}`);
 
@@ -124,7 +223,7 @@ function inspectImageFile(imagePath) {
 
     let metaMap;
     try {
-        metaMap = readPngMetadata(buf);
+        metaMap = readImageMetadata(buf);
     } catch (err) {
         console.error(`解析失敗: ${err.message}`);
         return;
@@ -198,7 +297,7 @@ function main() {
     const args = process.argv.slice(2);
     if (args.length === 0 || args[0] === '-h' || args[0] === '--help') {
         console.log('\n使用方法:');
-        console.log('  node reader.js <image1.png> [image2.png ...]');
+        console.log('  node reader.js <image1.png|image1.jpg> [image2.jpg ...]');
         console.log('  或直接將圖片拖曳至 drag_and_drop_read_metadata.bat 上。\n');
         process.exit(0);
     }
@@ -214,5 +313,7 @@ if (require.main === module) {
 
 module.exports = {
     readPngMetadata,
+    readJpegMetadata,
+    readImageMetadata,
     inspectImageFile,
 };

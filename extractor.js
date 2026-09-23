@@ -144,6 +144,79 @@ function embedPngMetadata(pngBuffer, meta) {
     ]);
 }
 
+/**
+ * Create a standard JPEG COM (Comment, marker 0xFF 0xFE) segment.
+ * @param {string} prefix - Identification prefix (e.g. 'parameters' or 'nano_banana_meta')
+ * @param {string} text - UTF-8 text payload
+ * @returns {Buffer}
+ */
+function createJpegComSegment(prefix, text) {
+    const payload = Buffer.from(prefix + '\n' + text, 'utf8');
+    const maxDataLen = 65533; // 65535 - 2 bytes length field
+    const slice = payload.length > maxDataLen ? payload.subarray(0, maxDataLen) : payload;
+    const segLen = slice.length + 2;
+
+    const segBuf = Buffer.alloc(4 + slice.length);
+    segBuf[0] = 0xFF;
+    segBuf[1] = 0xFE; // COM marker
+    segBuf.writeUInt16BE(segLen, 2);
+    slice.copy(segBuf, 4);
+    return segBuf;
+}
+
+/**
+ * Inject JPEG COM segments into a JPEG buffer (lossless, no re-encoding).
+ * @param {Buffer} jpegBuffer
+ * @param {object} meta
+ * @returns {Buffer}
+ */
+function embedJpegMetadata(jpegBuffer, meta) {
+    if (!jpegBuffer || jpegBuffer.length < 4) return jpegBuffer;
+    if (jpegBuffer[0] !== 0xFF || jpegBuffer[1] !== 0xD8) return jpegBuffer; // Not a JPEG
+
+    const paramsText = formatParametersText(meta);
+    const jsonText = JSON.stringify(meta);
+
+    const comParams = createJpegComSegment('parameters', paramsText);
+    const comJson = createJpegComSegment('nano_banana_meta', jsonText);
+    const combined = Buffer.concat([comParams, comJson]);
+
+    // Insert after APP0 (JFIF) if present, otherwise immediately after SOI (0xFF 0xD8)
+    let insertPos = 2;
+    if (jpegBuffer[2] === 0xFF && jpegBuffer[3] === 0xE0) {
+        const app0Len = jpegBuffer.readUInt16BE(4);
+        insertPos = 4 + app0Len;
+    }
+
+    return Buffer.concat([
+        jpegBuffer.subarray(0, insertPos),
+        combined,
+        jpegBuffer.subarray(insertPos)
+    ]);
+}
+
+/**
+ * Dispatcher to embed metadata into either PNG or JPEG.
+ * @param {Buffer} imageBuffer
+ * @param {object} meta
+ * @returns {Buffer}
+ */
+function embedImageMetadata(imageBuffer, meta) {
+    if (!imageBuffer || imageBuffer.length < 4) return imageBuffer;
+
+    // Check PNG signature: 89 50 4E 47
+    if (imageBuffer[0] === 0x89 && imageBuffer[1] === 0x50 && imageBuffer[2] === 0x4E && imageBuffer[3] === 0x47) {
+        return embedPngMetadata(imageBuffer, meta);
+    }
+
+    // Check JPEG signature: FF D8
+    if (imageBuffer[0] === 0xFF && imageBuffer[1] === 0xD8) {
+        return embedJpegMetadata(imageBuffer, meta);
+    }
+
+    return imageBuffer;
+}
+
 // Print usage information
 function printUsage() {
     console.log('\n================================================================');
@@ -390,9 +463,9 @@ function extractWorkspaceFile(jsonPath, outputDir, options = {}) {
 
         let imageBuffer = Buffer.from(base64Data, 'base64');
 
-        // Embed metadata into PNG iTXt chunks
+        // Embed metadata into PNG iTXt or JPEG COM segments
         if (meta) {
-            imageBuffer = embedPngMetadata(imageBuffer, meta);
+            imageBuffer = embedImageMetadata(imageBuffer, meta);
         }
 
         // Path traversal sanitization
@@ -576,11 +649,11 @@ function main() {
     console.log(`  🎉 全數匯出完成！`);
     console.log(`================================================================`);
     console.log(`  成功處理工作區: ${processedFiles} 個檔案`);
-    console.log(`  共提取生成圖片: ${totalImages} 張 (提示詞已完整內嵌於 PNG 圖片中)`);
+    console.log(`  共提取生成圖片: ${totalImages} 張 (提示詞已完整內嵌於 PNG/JPEG 圖片中)`);
     if (saveTxt) {
         console.log(`  共輸出提示詞檔: ${totalTexts} 個 (.txt)`);
     } else {
-        console.log(`  提示詞狀態    : 已全數內嵌進 PNG 檔案中，保持輸出目錄整潔無雜訊。`);
+        console.log(`  提示詞狀態    : 已全數內嵌進 PNG/JPEG 檔案中，保持輸出目錄整潔無雜訊。`);
         console.log(`  讀取中繼資料  : 可將圖片拖曳至 drag_and_drop_read_metadata.bat 或以 viewer.html 開啟。`);
     }
     console.log(`  輸出目錄      : "${outputDir}"`);
@@ -593,6 +666,8 @@ if (require.main === module) {
 
 module.exports = {
     embedPngMetadata,
+    embedJpegMetadata,
+    embedImageMetadata,
     formatParametersText,
     extractWorkspaceFile,
     parseWorkspaceJsonBuffer,

@@ -279,9 +279,9 @@
     <main>
         <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
             <div class="icon">🖼️</div>
-            <h3>點擊選取或直接拖放 PNG 圖片至此</h3>
-            <p>支援同時拖放多張圖片，直接在瀏覽器本地解析，不經任何伺服器傳輸。</p>
-            <input type="file" id="fileInput" accept="image/png" multiple style="display: none;">
+            <h3>點擊選取或直接拖放 PNG / JPEG 圖片至此</h3>
+            <p>支援 .png, .jpg, .jpeg 同時拖放多張圖片，直接在瀏覽器本地解析，不經任何伺服器傳輸。</p>
+            <input type="file" id="fileInput" accept="image/png,image/jpeg,.png,.jpg,.jpeg" multiple style="display: none;">
         </div>
 
         <div class="content-area" id="contentArea">
@@ -368,16 +368,20 @@
         });
 
         async function handleFiles(files) {
-            const pngFiles = Array.from(files).filter(f => f.type === 'image/png' || f.name.toLowerCase().endsWith('.png'));
-            if (pngFiles.length === 0) {
-                alert('請選取 PNG 圖片檔案！');
+            const imageFiles = Array.from(files).filter(f => 
+                f.type === 'image/png' || 
+                f.type === 'image/jpeg' || 
+                /\.(png|jpe?g)$/i.test(f.name)
+            );
+            if (imageFiles.length === 0) {
+                alert('請選取 PNG 或 JPEG (.jpg/.jpeg) 圖片檔案！');
                 return;
             }
 
             loadedImages = [];
-            for (const file of pngFiles) {
+            for (const file of imageFiles) {
                 const buffer = await file.arrayBuffer();
-                const metadata = parsePngMetadata(buffer);
+                const metadata = parseImageMetadata(buffer);
                 const url = URL.createObjectURL(file);
                 loadedImages.push({
                     file,
@@ -449,7 +453,7 @@
                                     if (compFlag === 0) {
                                         text = textDecoder.decode(textBytes);
                                     } else {
-                                        // Compressed fallback (rarely used for small metadata)
+                                        // Compressed fallback
                                         text = textDecoder.decode(textBytes);
                                     }
                                     metadata[keyword] = text;
@@ -465,6 +469,90 @@
             }
 
             return metadata;
+        }
+
+        // Parse JPEG COM (Comment 0xFF 0xFE) segments using native ArrayBuffer
+        function parseJpegMetadata(arrayBuffer) {
+            const uint8 = new Uint8Array(arrayBuffer);
+            const view = new DataView(arrayBuffer);
+            const metadata = {};
+
+            // Check JPEG SOI: FF D8
+            if (uint8.length < 4 || uint8[0] !== 0xFF || uint8[1] !== 0xD8) {
+                return metadata;
+            }
+
+            let pos = 2;
+            const len = uint8.length;
+            const textDecoder = new TextDecoder('utf-8');
+
+            while (pos + 4 <= len) {
+                if (uint8[pos] !== 0xFF) {
+                    pos++;
+                    continue;
+                }
+
+                while (pos < len && uint8[pos] === 0xFF) {
+                    pos++;
+                }
+                if (pos >= len) break;
+
+                const marker = uint8[pos++];
+
+                if (marker === 0xD9 || marker === 0xDA) {
+                    break; // EOI or SOS
+                }
+                if ((marker >= 0xD0 && marker <= 0xD7) || marker === 0x00) {
+                    continue;
+                }
+
+                if (pos + 2 > len) break;
+                const segLen = view.getUint16(pos);
+                if (segLen < 2 || pos + segLen > len) {
+                    break;
+                }
+
+                const payloadStart = pos + 2;
+                const payloadEnd = pos + segLen;
+
+                if (marker === 0xFE) { // COM
+                    const text = textDecoder.decode(uint8.subarray(payloadStart, payloadEnd));
+                    const newlineIdx = text.indexOf('\n');
+                    if (newlineIdx !== -1) {
+                        const prefix = text.substring(0, newlineIdx).trim();
+                        const content = text.substring(newlineIdx + 1);
+                        if (prefix === 'nano_banana_meta' || prefix === 'parameters') {
+                            metadata[prefix] = content;
+                        } else {
+                            metadata[prefix || 'comment'] = content;
+                        }
+                    } else {
+                        metadata['comment'] = text;
+                    }
+                }
+
+                pos += segLen;
+            }
+
+            return metadata;
+        }
+
+        // Universal image metadata parser dispatcher
+        function parseImageMetadata(arrayBuffer) {
+            const uint8 = new Uint8Array(arrayBuffer);
+            if (uint8.length < 4) return {};
+
+            // PNG signature: 89 50 4E 47
+            if (uint8[0] === 0x89 && uint8[1] === 0x50 && uint8[2] === 0x4E && uint8[3] === 0x47) {
+                return parsePngMetadata(arrayBuffer);
+            }
+
+            // JPEG signature: FF D8
+            if (uint8[0] === 0xFF && uint8[1] === 0xD8) {
+                return parseJpegMetadata(arrayBuffer);
+            }
+
+            return {};
         }
 
         function renderAll() {
