@@ -1,11 +1,148 @@
 /**
  * extractor.js
  * CLI Workspace Extractor for Nano Banana Ultra lite
- * Usage: node extractor.js <workspace-json-path> [output-dir]
+ * 
+ * Features:
+ *  - 100% Zero Dependencies (native Node.js fs, path, crypto)
+ *  - Custom Buffer JSON parser for handling multi-gigabyte workspaces
+ *  - Pure PNG Metadata (iTXt) injection: prompt & parameters embedded directly inside PNGs
+ *  - Clean output: outputs images only by default (no txt clutter)
+ *  - Strict filtering: excludes thumbnails and staged assets, saving only generated results
+ *  - Path traversal protection (path.basename sanitization)
  */
 
 const fs = require('fs');
 const path = require('path');
+
+// CRC-32 Lookup Table for PNG Chunk generation
+const CRC_TABLE = new Uint32Array(256);
+for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) {
+        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    CRC_TABLE[i] = c >>> 0;
+}
+
+/**
+ * Calculate CRC-32 checksum.
+ */
+function crc32(buf, offset = 0, length = buf.length) {
+    let c = 0xFFFFFFFF;
+    const end = offset + length;
+    for (let i = offset; i < end; i++) {
+        c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+    }
+    return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+/**
+ * Create an uncompressed iTXt chunk for PNG.
+ * @param {string} keyword - ASCII/UTF-8 keyword (1-79 bytes)
+ * @param {string} text - UTF-8 text string
+ * @returns {Buffer}
+ */
+function createITXtChunk(keyword, text) {
+    const keywordBuf = Buffer.from(keyword, 'utf8');
+    const textBuf = Buffer.from(text, 'utf8');
+
+    // iTXt data structure:
+    // keyword (null-terminated)
+    // compFlag (1 byte, 0 = uncompressed)
+    // compMethod (1 byte, 0)
+    // langTag (null-terminated -> 1 null byte)
+    // transKeyword (null-terminated -> 1 null byte)
+    // text (utf8)
+    const dataLen = keywordBuf.length + 1 + 1 + 1 + 1 + 1 + textBuf.length;
+    const data = Buffer.alloc(dataLen);
+
+    let offset = 0;
+    keywordBuf.copy(data, offset);
+    offset += keywordBuf.length;
+    data[offset++] = 0; // null separator
+    data[offset++] = 0; // uncompressed
+    data[offset++] = 0; // compression method 0
+    data[offset++] = 0; // empty language tag (null)
+    data[offset++] = 0; // empty translated keyword (null)
+    textBuf.copy(data, offset);
+
+    // Chunk = 4 bytes length + 4 bytes type ('iTXt') + data + 4 bytes CRC
+    const chunkType = Buffer.from('iTXt', 'ascii');
+    const chunkHeader = Buffer.alloc(8);
+    chunkHeader.writeUInt32BE(data.length, 0);
+    chunkType.copy(chunkHeader, 4);
+
+    const typeAndData = Buffer.concat([chunkType, data]);
+    const crcVal = crc32(typeAndData);
+    const crcBuf = Buffer.alloc(4);
+    crcBuf.writeUInt32BE(crcVal, 0);
+
+    return Buffer.concat([chunkHeader, data, crcBuf]);
+}
+
+/**
+ * Format generation metadata into standard AI parameters text.
+ */
+function formatParametersText(meta) {
+    let text = `${meta.prompt || ''}\n`;
+    const details = [];
+    if (meta.model) details.push(`Model: ${meta.model}`);
+    if (meta.style) details.push(`Style: ${meta.style}`);
+    if (meta.aspectRatio) details.push(`Aspect Ratio: ${meta.aspectRatio}`);
+    if (meta.size) details.push(`Size: ${meta.size}`);
+    if (meta.mode) details.push(`Mode: ${meta.mode}`);
+    if (meta.executionMode) details.push(`Execution Mode: ${meta.executionMode}`);
+    if (meta.temperature !== undefined) details.push(`Temperature: ${meta.temperature}`);
+    if (meta.thinkingLevel) details.push(`Thinking Level: ${meta.thinkingLevel}`);
+    if (meta.createdAt) details.push(`Created At: ${new Date(meta.createdAt).toISOString()}`);
+    if (details.length > 0) {
+        text += details.join(', ') + '\n';
+    }
+    if (meta.thoughts && meta.thoughts.trim()) {
+        text += `\n[Thoughts]:\n${meta.thoughts.trim()}\n`;
+    }
+    if (meta.text && meta.text.trim()) {
+        text += `\n[Response]:\n${meta.text.trim()}\n`;
+    }
+    return text.trim();
+}
+
+/**
+ * Inject iTXt metadata chunks into a PNG buffer.
+ * Injects both standard 'parameters' and structured 'nano_banana_meta'.
+ * @param {Buffer} pngBuffer
+ * @param {object} meta
+ * @returns {Buffer}
+ */
+function embedPngMetadata(pngBuffer, meta) {
+    // Check PNG signature: 89 50 4E 47 0D 0A 1A 0A
+    if (!pngBuffer || pngBuffer.length < 8) return pngBuffer;
+    if (pngBuffer[0] !== 0x89 || pngBuffer[1] !== 0x50 || pngBuffer[2] !== 0x4E || pngBuffer[3] !== 0x47) {
+        return pngBuffer; // Not a PNG
+    }
+
+    // Prepare chunks
+    const paramsText = formatParametersText(meta);
+    const jsonText = JSON.stringify(meta);
+
+    const chunkParams = createITXtChunk('parameters', paramsText);
+    const chunkJson = createITXtChunk('nano_banana_meta', jsonText);
+    const combinedChunks = Buffer.concat([chunkParams, chunkJson]);
+
+    // Find IEND chunk
+    const iendMarker = Buffer.from('IEND', 'ascii');
+    const iendTypePos = pngBuffer.lastIndexOf(iendMarker);
+    if (iendTypePos < 4) {
+        return pngBuffer; // Corrupted PNG, return untouched
+    }
+    const iendPos = iendTypePos - 4; // Start of IEND chunk (length field)
+
+    return Buffer.concat([
+        pngBuffer.subarray(0, iendPos),
+        combinedChunks,
+        pngBuffer.subarray(iendPos)
+    ]);
+}
 
 // Print usage information
 function printUsage() {
@@ -13,10 +150,11 @@ function printUsage() {
     console.log('  Nano Banana Ultra lite - 工作區檔案專用匯出器 (CLI)');
     console.log('================================================================');
     console.log('使用方法:');
-    console.log('  node extractor.js <workspace_file.json> [output_directory]');
+    console.log('  node extractor.js <workspace_file.json...> [-o <output_dir>] [--txt]');
     console.log('\n參數說明:');
-    console.log('  workspace_file.json : Lite 版匯出的 .json 工作區檔案路徑 (必填)');
-    console.log('  output_directory    : 匯出目標資料夾，預設為 ./output (選填)');
+    console.log('  workspace_file.json : Lite 版匯出的 .json 工作區檔案路徑 (支援傳入多個)');
+    console.log('  -o, --output <dir>  : 匯出目標資料夾，預設為 ./output');
+    console.log('  --txt               : (選填) 同時額外輸出 .txt 提示詞檔 (預設已直接內嵌至 PNG)');
     console.log('================================================================\n');
 }
 
@@ -49,10 +187,8 @@ function parseWorkspaceJsonBuffer(buf) {
                     return { start, end };
                 }
                 if (hasEscapes) {
-                    // Slow path: decode and parse with JSON.parse to handle escapes correctly
                     return JSON.parse(buf.slice(start - 1, end + 1).toString('utf8'));
                 } else {
-                    // Fast path: direct toString
                     return buf.toString('utf8', start, end);
                 }
             } else if (b === 0x5C) { // \
@@ -180,22 +316,13 @@ function parseWorkspaceJsonBuffer(buf) {
     return res;
 }
 
-// Main execution function
-function main() {
-    const args = process.argv.slice(2);
-    
-    if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-        printUsage();
-        process.exit(0);
-    }
-
-    const jsonPath = path.resolve(args[0]);
-    const outputDir = path.resolve(args[1] || path.join(__dirname, 'output'));
-
-    if (!fs.existsSync(jsonPath)) {
-        console.error(`錯誤: 找不到指定的 JSON 檔案 "${jsonPath}"`);
-        process.exit(1);
-    }
+/**
+ * Process a single workspace JSON file and extract its images.
+ */
+function extractWorkspaceFile(jsonPath, outputDir, options = {}) {
+    console.log(`\n==================================================`);
+    console.log(`正在讀取工作區檔案: ${path.basename(jsonPath)}`);
+    console.log(`==================================================`);
 
     let workspaceData;
     let fileBuffer;
@@ -203,28 +330,24 @@ function main() {
         fileBuffer = fs.readFileSync(jsonPath);
         workspaceData = parseWorkspaceJsonBuffer(fileBuffer);
     } catch (error) {
-        console.error(`錯誤: 無法解析 JSON 檔案. 原因: ${error.message}`);
-        process.exit(1);
+        console.error(`❌ 錯誤: 無法解析 JSON 檔案. 原因: ${error.message}`);
+        return { success: false, images: 0, texts: 0 };
     }
 
-    // Verify workspace format
     if (workspaceData.format !== 'nbu-workspace-snapshot') {
-        console.warn('警告: 此檔案的格式欄位不是 "nbu-workspace-snapshot"，可能不是標準的 Nano Banana 工作區檔案。');
+        console.warn('⚠️ 警告: 此檔案格式欄位不是 "nbu-workspace-snapshot"，可能非標準 Nano Banana 工作區快照。');
     }
 
     const snapshot = workspaceData.snapshot;
     if (!snapshot || !Array.isArray(snapshot.history)) {
-        console.error('錯誤: 工作區檔案中沒有找到有效的歷史紀錄 (snapshot.history)。');
-        process.exit(1);
+        console.error('❌ 錯誤: 工作區檔案中沒有找到有效的歷史紀錄 (snapshot.history)。');
+        return { success: false, images: 0, texts: 0 };
     }
 
     const savedImages = (workspaceData.assets && workspaceData.assets.savedImages) || {};
     const history = snapshot.history;
 
-    console.log(`開始解析工作區檔案...`);
-    console.log(`讀取到歷史紀錄項目: ${history.length} 個`);
-    console.log(`讀取到內嵌圖片資料: ${Object.keys(savedImages).length} 個`);
-    console.log(`匯出目標資料夾: "${outputDir}"`);
+    console.log(`歷史紀錄項目: ${history.length} 個 | 內嵌圖片資料: ${Object.keys(savedImages).length} 個`);
 
     // Ensure output directory exists
     if (!fs.existsSync(outputDir)) {
@@ -233,10 +356,9 @@ function main() {
 
     let extractedImagesCount = 0;
     let extractedTextsCount = 0;
-    let skippedThumbnailsCount = 0;
 
-    // Helper to decode and save a base64 image
-    function saveImage(filename) {
+    // Helper to decode, embed metadata, and save an image
+    function saveImage(filename, meta) {
         const imageRecord = savedImages[filename];
         if (!imageRecord || !imageRecord.dataUrl) {
             return false;
@@ -245,7 +367,7 @@ function main() {
         const dataUrlInfo = imageRecord.dataUrl;
         let base64Data;
 
-        // Handle when dataUrl is parsed as a slice object { start, end }
+        // Handle slice object { start, end }
         if (dataUrlInfo && typeof dataUrlInfo === 'object' && 'start' in dataUrlInfo && 'end' in dataUrlInfo) {
             let commaPos = -1;
             for (let i = dataUrlInfo.start; i < dataUrlInfo.end; i++) {
@@ -254,141 +376,225 @@ function main() {
                     break;
                 }
             }
-            if (commaPos === -1) {
-                return false;
-            }
+            if (commaPos === -1) return false;
+
             const prefix = fileBuffer.slice(dataUrlInfo.start, commaPos).toString('ascii');
-            if (!prefix.startsWith('data:') || !prefix.includes(';base64')) {
-                return false;
-            }
+            if (!prefix.startsWith('data:') || !prefix.includes(';base64')) return false;
+
             base64Data = fileBuffer.slice(commaPos + 1, dataUrlInfo.end).toString('ascii');
         } else {
-            // Fallback for regular string dataUrl
             const matches = dataUrlInfo.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-            if (!matches) {
-                return false;
-            }
+            if (!matches) return false;
             base64Data = matches[2];
         }
 
-        const imageBuffer = Buffer.from(base64Data, 'base64');
+        let imageBuffer = Buffer.from(base64Data, 'base64');
 
-        const targetPath = path.join(outputDir, filename);
+        // Embed metadata into PNG iTXt chunks
+        if (meta) {
+            imageBuffer = embedPngMetadata(imageBuffer, meta);
+        }
+
+        // Path traversal sanitization
+        const safeFilename = path.basename(filename);
+        const targetPath = path.join(outputDir, safeFilename);
+
         fs.writeFileSync(targetPath, imageBuffer);
         extractedImagesCount++;
         return true;
     }
 
-    // Helper to save prompt text files
-    function savePromptTxt(filename, item) {
-        const txtFilename = filename.substring(0, filename.lastIndexOf('.')) + '.txt';
+    // Helper to save optional prompt txt file
+    function savePromptTxt(filename, meta) {
+        const safeFilename = path.basename(filename);
+        const txtFilename = safeFilename.substring(0, safeFilename.lastIndexOf('.')) + '.txt';
         const txtPath = path.join(outputDir, txtFilename);
 
-        const createdAtStr = item.createdAt ? new Date(item.createdAt).toLocaleString('zh-TW') : '未知';
+        const createdAtStr = meta.createdAt ? new Date(meta.createdAt).toLocaleString('zh-TW') : '未知';
         
         let txtContent = '';
         txtContent += `==================================================\n`;
         txtContent += `  Nano Banana Ultra lite - 圖片生成參數\n`;
         txtContent += `==================================================\n`;
-        txtContent += `圖片檔名: ${filename}\n`;
-        txtContent += `提示詞 (Prompt):\n${item.prompt || ''}\n\n`;
-        txtContent += `模型 (Model): ${item.model || ''}\n`;
-        txtContent += `風格 (Style): ${item.style || ''}\n`;
-        txtContent += `比例 (Aspect Ratio): ${item.aspectRatio || ''}\n`;
-        txtContent += `尺寸 (Size): ${item.size || ''}\n`;
+        txtContent += `圖片檔名: ${safeFilename}\n`;
+        txtContent += `提示詞 (Prompt):\n${meta.prompt || ''}\n\n`;
+        txtContent += `模型 (Model): ${meta.model || ''}\n`;
+        txtContent += `風格 (Style): ${meta.style || ''}\n`;
+        txtContent += `比例 (Aspect Ratio): ${meta.aspectRatio || ''}\n`;
+        txtContent += `尺寸 (Size): ${meta.size || ''}\n`;
+        if (meta.mode) txtContent += `生成模式 (Mode): ${meta.mode}\n`;
+        if (meta.executionMode) txtContent += `執行方式 (Execution Mode): ${meta.executionMode}\n`;
+        if (meta.temperature !== undefined) txtContent += `溫度 (Temperature): ${meta.temperature}\n`;
+        if (meta.thinkingLevel) txtContent += `思考層級 (Thinking Level): ${meta.thinkingLevel}\n`;
         txtContent += `生成時間: ${createdAtStr}\n`;
         
-        if (item.thoughts && item.thoughts.trim()) {
+        if (meta.text && meta.text.trim()) {
+            txtContent += `\n==================================================\n`;
+            txtContent += `  模型文字回覆說明 (Model Response)\n`;
+            txtContent += `==================================================\n`;
+            txtContent += `${meta.text.trim()}\n`;
+        }
+
+        if (meta.thoughts && meta.thoughts.trim()) {
             txtContent += `\n==================================================\n`;
             txtContent += `  思考過程 (Thinking Process)\n`;
             txtContent += `==================================================\n`;
-            txtContent += `${item.thoughts.trim()}\n`;
+            txtContent += `${meta.thoughts.trim()}\n`;
         }
 
         fs.writeFileSync(txtPath, txtContent, 'utf8');
         extractedTextsCount++;
     }
 
-    // Process each history item
+    // Process each history item (Strict filtering: ONLY generated product, variant, and thought images)
     history.forEach((item, index) => {
         const shortId = item.id ? item.id.substring(0, 8) : `item_${index}`;
-        const savedFilenames = [];
+
+        const baseMeta = {
+            id: item.id,
+            prompt: item.prompt || '',
+            model: item.model || '',
+            style: item.style || '',
+            aspectRatio: item.aspectRatio || '',
+            size: item.size || '',
+            mode: item.mode || '',
+            executionMode: item.executionMode || '',
+            temperature: item.temperature,
+            thinkingLevel: item.thinkingLevel,
+            createdAt: item.createdAt || null,
+            text: item.text || '',
+            thoughts: item.thoughts || '',
+        };
 
         // 1. Process Final Product Image (成品圖)
         if (item.savedFilename) {
-            const success = saveImage(item.savedFilename);
+            const success = saveImage(item.savedFilename, baseMeta);
             if (success) {
-                console.log(`[成品圖] [${shortId}] 成功匯出圖片: "${item.savedFilename}"`);
-                savedFilenames.push(item.savedFilename);
-            } else {
-                console.log(`[成品圖] [${shortId}] 提示: 找不到圖片資料或寫入失敗 "${item.savedFilename}"`);
+                console.log(`  ✓ [成品圖] [${shortId}] 成功匯出並內嵌參數: "${item.savedFilename}"`);
+                if (options.saveTxt) {
+                    savePromptTxt(item.savedFilename, baseMeta);
+                }
             }
         }
 
-        // 2. Process Thinking Process Images (思考圖) and Variant Images from resultParts
+        // 2. Process Thinking Process Images and Variant Images from resultParts
         if (Array.isArray(item.resultParts)) {
             item.resultParts.forEach((part) => {
                 if (part.kind === 'thought-image' && part.savedFilename) {
-                    const success = saveImage(part.savedFilename);
+                    const thoughtMeta = {
+                        ...baseMeta,
+                        kind: 'thought-image',
+                        sequence: part.sequence,
+                        thoughts: item.thoughts || 'Thinking Process Image'
+                    };
+                    const success = saveImage(part.savedFilename, thoughtMeta);
                     if (success) {
-                        console.log(`[思考圖] [${shortId}] 成功匯出思考圖: "${part.savedFilename}"`);
-                        savedFilenames.push(part.savedFilename);
+                        console.log(`  ✓ [思考圖] [${shortId}] 成功匯出並內嵌參數: "${part.savedFilename}"`);
+                        if (options.saveTxt) {
+                            savePromptTxt(part.savedFilename, thoughtMeta);
+                        }
                     }
                 } else if (part.kind === 'output-image' && part.savedFilename && part.savedFilename !== item.savedFilename) {
-                    const success = saveImage(part.savedFilename);
+                    const variantMeta = {
+                        ...baseMeta,
+                        kind: 'variant-image',
+                        sequence: part.sequence
+                    };
+                    const success = saveImage(part.savedFilename, variantMeta);
                     if (success) {
-                        console.log(`[成品圖-變體] [${shortId}] 成功匯出變體圖片: "${part.savedFilename}"`);
-                        savedFilenames.push(part.savedFilename);
+                        console.log(`  ✓ [變體圖] [${shortId}] 成功匯出並內嵌參數: "${part.savedFilename}"`);
+                        if (options.saveTxt) {
+                            savePromptTxt(part.savedFilename, variantMeta);
+                        }
                     }
                 }
             });
         }
-
-        // 3. Save prompt txt if we saved at least one image (either final product image or thought image)
-        if (savedFilenames.length > 0) {
-            // Determine primary filename reference for the txt file
-            const primaryFilename = savedFilenames.includes(item.savedFilename) ? item.savedFilename : savedFilenames[0];
-            savePromptTxt(primaryFilename, item);
-            console.log(`[提示詞] [${shortId}] 已建立提示詞文字檔 (基於圖片 "${primaryFilename}")`);
-        } else {
-            console.log(`[提示詞] [${shortId}] 略過: 完全沒有任何圖片成功匯出，不保存提示詞文字檔。`);
-        }
     });
 
-    // Also look at remaining assets to make sure we didn't miss any full-resolution images.
-    // We skip files ending with "-thumbnail.png" unless their corresponding full image is missing.
-    Object.keys(savedImages).forEach((filename) => {
-        const isThumbnail = filename.includes('-thumbnail');
-        
-        if (isThumbnail) {
-            const baseName = filename.replace('-thumbnail', '');
-            // Check if base image exists in savedImages, if not, we can extract thumbnail as fallback
-            const hasFullImage = savedImages[baseName] !== undefined;
-            if (hasFullImage) {
-                skippedThumbnailsCount++;
-                return; // Skip thumbnail since full image exists
-            }
-        }
-
-        // Check if this file was already written (exists on disk)
-        const targetPath = path.join(outputDir, filename);
-        if (!fs.existsSync(targetPath)) {
-            // Save it! It might be a stray image or stage asset
-            const success = saveImage(filename);
-            if (success) {
-                console.log(`[其他資源] 成功匯出未分類圖片: "${filename}"`);
-            }
-        }
-    });
-
-    console.log(`\n==================================================`);
-    console.log(`  匯出完成！`);
-    console.log(`==================================================`);
-    console.log(`  共匯出圖片檔案: ${extractedImagesCount} 個`);
-    console.log(`  共匯出提示詞檔案: ${extractedTextsCount} 個`);
-    console.log(`  過濾略過縮圖檔案: ${skippedThumbnailsCount} 個`);
-    console.log(`  輸出目錄: "${outputDir}"`);
-    console.log(`==================================================\n`);
+    console.log(`此工作區提取完畢: 成功提取 ${extractedImagesCount} 張圖片 (已全數內嵌中繼資料)。`);
+    return { success: true, images: extractedImagesCount, texts: extractedTextsCount };
 }
 
-main();
+// Main execution function
+function main() {
+    const rawArgs = process.argv.slice(2);
+    
+    if (rawArgs.length === 0 || rawArgs.includes('--help') || rawArgs.includes('-h')) {
+        printUsage();
+        process.exit(0);
+    }
+
+    // Parse options and input files
+    const inputFiles = [];
+    let outputDir = path.join(__dirname, 'output');
+    let saveTxt = false;
+
+    for (let i = 0; i < rawArgs.length; i++) {
+        const arg = rawArgs[i];
+        if (arg === '-o' || arg === '--output') {
+            if (i + 1 < rawArgs.length) {
+                outputDir = path.resolve(rawArgs[++i]);
+            }
+        } else if (arg === '--txt') {
+            saveTxt = true;
+        } else if (!arg.startsWith('-')) {
+            inputFiles.push(path.resolve(arg));
+        }
+    }
+
+    if (inputFiles.length === 0) {
+        console.error('❌ 錯誤: 請至少指定一個 .json 工作區檔案路徑。');
+        printUsage();
+        process.exit(1);
+    }
+
+    console.log('\n================================================================');
+    console.log('  Nano Banana Ultra lite - 工作區檔案提取開始');
+    console.log('================================================================');
+    console.log(`匯出目標目錄: "${outputDir}"`);
+    console.log(`模式        : 純 PNG 內嵌 Metadata${saveTxt ? ' (+ 額外輸出 TXT 檔)' : ' (極致純淨，不輸出 TXT 檔)'}`);
+
+    let totalImages = 0;
+    let totalTexts = 0;
+    let processedFiles = 0;
+
+    inputFiles.forEach(file => {
+        if (!fs.existsSync(file)) {
+            console.error(`\n❌ [錯誤] 找不到檔案: "${file}"，跳過此檔案。`);
+            return;
+        }
+        const res = extractWorkspaceFile(file, outputDir, { saveTxt });
+        if (res.success) {
+            totalImages += res.images;
+            totalTexts += res.texts;
+            processedFiles++;
+        }
+    });
+
+    console.log(`\n================================================================`);
+    console.log(`  🎉 全數匯出完成！`);
+    console.log(`================================================================`);
+    console.log(`  成功處理工作區: ${processedFiles} 個檔案`);
+    console.log(`  共提取生成圖片: ${totalImages} 張 (提示詞已完整內嵌於 PNG 圖片中)`);
+    if (saveTxt) {
+        console.log(`  共輸出提示詞檔: ${totalTexts} 個 (.txt)`);
+    } else {
+        console.log(`  提示詞狀態    : 已全數內嵌進 PNG 檔案中，保持輸出目錄整潔無雜訊。`);
+        console.log(`  讀取中繼資料  : 可將圖片拖曳至 drag_and_drop_read_metadata.bat 或以 viewer.html 開啟。`);
+    }
+    console.log(`  輸出目錄      : "${outputDir}"`);
+    console.log(`================================================================\n`);
+}
+
+if (require.main === module) {
+    main();
+}
+
+module.exports = {
+    embedPngMetadata,
+    formatParametersText,
+    extractWorkspaceFile,
+    parseWorkspaceJsonBuffer,
+    crc32,
+};

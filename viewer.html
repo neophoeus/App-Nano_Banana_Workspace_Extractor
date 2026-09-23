@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nano Banana Ultra - 圖片中繼資料檢視器</title>
+    <style>
+        :root {
+            --bg-primary: #121316;
+            --bg-secondary: #1a1c23;
+            --bg-card: #22252f;
+            --accent: #f5c518;
+            --accent-hover: #ffd84d;
+            --text-primary: #f0f2f5;
+            --text-secondary: #9ba1b0;
+            --border: #323644;
+            --success: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.15rem;
+            font-weight: 700;
+        }
+
+        .brand span.banana {
+            font-size: 1.5rem;
+        }
+
+        .badge {
+            background: rgba(245, 197, 24, 0.15);
+            color: var(--accent);
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-weight: 600;
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Drop Zone */
+        .dropzone {
+            border: 2px dashed var(--border);
+            background-color: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 32px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--accent);
+            background-color: rgba(245, 197, 24, 0.05);
+        }
+
+        .dropzone .icon {
+            font-size: 2.2rem;
+            margin-bottom: 8px;
+        }
+
+        .dropzone h3 {
+            font-size: 1.1rem;
+            margin-bottom: 6px;
+        }
+
+        .dropzone p {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+        }
+
+        /* Content Area */
+        .content-area {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            flex: 1;
+        }
+
+        @media (max-width: 900px) {
+            .content-area {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .image-pane {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+        }
+
+        .image-pane img {
+            max-width: 100%;
+            max-height: 65vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .filmstrip {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            width: 100%;
+            padding: 8px 4px;
+        }
+
+        .filmstrip img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            opacity: 0.6;
+            transition: all 0.2s ease;
+        }
+
+        .filmstrip img.active {
+            border-color: var(--accent);
+            opacity: 1;
+            transform: scale(1.05);
+        }
+
+        /* Metadata Pane */
+        .metadata-pane {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .card {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-copy {
+            background-color: var(--accent);
+            color: #000;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .btn-copy:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .prompt-text {
+            font-size: 1.05rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background-color: var(--bg-card);
+            padding: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .meta-item {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+        }
+
+        .meta-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .meta-value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .thoughts-box {
+            max-height: 250px;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            background-color: var(--bg-card);
+            padding: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand">
+            <span class="banana">🍌</span>
+            <span>Nano Banana Ultra</span>
+            <span class="badge">Metadata Viewer</span>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+            純離線圖片中繼資料讀取器
+        </div>
+    </header>
+
+    <main>
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+            <div class="icon">🖼️</div>
+            <h3>點擊選取或直接拖放 PNG 圖片至此</h3>
+            <p>支援同時拖放多張圖片，直接在瀏覽器本地解析，不經任何伺服器傳輸。</p>
+            <input type="file" id="fileInput" accept="image/png" multiple style="display: none;">
+        </div>
+
+        <div class="content-area" id="contentArea">
+            <!-- Left: Image Preview & Filmstrip -->
+            <div class="image-pane">
+                <img id="previewImg" src="" alt="預覽圖">
+                <div class="filmstrip" id="filmstrip"></div>
+            </div>
+
+            <!-- Right: Metadata & Prompt -->
+            <div class="metadata-pane">
+                <!-- Prompt Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">提示詞 (Prompt)</span>
+                        <button class="btn-copy" id="btnCopyPrompt" onclick="copyPrompt()">一鍵複製提示詞</button>
+                    </div>
+                    <div class="prompt-text" id="promptText">(未設定提示詞)</div>
+                </div>
+
+                <!-- Parameters Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">生成參數 (Generation Parameters)</span>
+                        <span id="imageFilename" style="font-size: 0.85rem; color: var(--text-secondary);"></span>
+                    </div>
+                    <div class="meta-grid" id="metaGrid">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Response / Description Card -->
+                <div class="card hidden" id="responseCard">
+                    <div class="card-header">
+                        <span class="card-title">模型文字回覆 (Model Response)</span>
+                    </div>
+                    <div class="thoughts-box" id="responseText"></div>
+                </div>
+
+                <!-- Thoughts Card -->
+                <div class="card hidden" id="thoughtsCard">
+                    <div class="card-header">
+                        <span class="card-title">思考過程 (Thinking Process)</span>
+                    </div>
+                    <div class="thoughts-box" id="thoughtsText"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const contentArea = document.getElementById('contentArea');
+        const previewImg = document.getElementById('previewImg');
+        const filmstrip = document.getElementById('filmstrip');
+        const promptText = document.getElementById('promptText');
+        const imageFilename = document.getElementById('imageFilename');
+        const metaGrid = document.getElementById('metaGrid');
+        const responseCard = document.getElementById('responseCard');
+        const responseText = document.getElementById('responseText');
+        const thoughtsCard = document.getElementById('thoughtsCard');
+        const thoughtsText = document.getElementById('thoughtsText');
+        const btnCopyPrompt = document.getElementById('btnCopyPrompt');
+
+        let loadedImages = [];
+        let currentIndex = 0;
+
+        // Drag and drop event handlers
+        window.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        window.addEventListener('dragleave', (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); });
+        window.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleFiles(e.dataTransfer.files);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handleFiles(e.target.files);
+            }
+        });
+
+        async function handleFiles(files) {
+            const pngFiles = Array.from(files).filter(f => f.type === 'image/png' || f.name.toLowerCase().endsWith('.png'));
+            if (pngFiles.length === 0) {
+                alert('請選取 PNG 圖片檔案！');
+                return;
+            }
+
+            loadedImages = [];
+            for (const file of pngFiles) {
+                const buffer = await file.arrayBuffer();
+                const metadata = parsePngMetadata(buffer);
+                const url = URL.createObjectURL(file);
+                loadedImages.push({
+                    file,
+                    name: file.name,
+                    url,
+                    metadata
+                });
+            }
+
+            currentIndex = 0;
+            renderAll();
+        }
+
+        // Parse PNG chunks (tEXt and iTXt) using native ArrayBuffer
+        function parsePngMetadata(arrayBuffer) {
+            const view = new DataView(arrayBuffer);
+            const uint8 = new Uint8Array(arrayBuffer);
+            const metadata = {};
+
+            // PNG Signature: 89 50 4E 47 0D 0A 1A 0A
+            if (uint8.length < 8 || uint8[0] !== 0x89 || uint8[1] !== 0x50 || uint8[2] !== 0x4E || uint8[3] !== 0x47) {
+                return metadata;
+            }
+
+            let pos = 8;
+            const len = uint8.length;
+            const textDecoder = new TextDecoder('utf-8');
+
+            while (pos + 8 <= len) {
+                const chunkLen = view.getUint32(pos);
+                let chunkType = '';
+                for (let i = 0; i < 4; i++) {
+                    chunkType += String.fromCharCode(uint8[pos + 4 + i]);
+                }
+                const dataStart = pos + 8;
+                const dataEnd = dataStart + chunkLen;
+
+                if (dataEnd + 4 > len) break;
+
+                if (chunkType === 'tEXt') {
+                    const chunkData = uint8.subarray(dataStart, dataEnd);
+                    const nullIdx = chunkData.indexOf(0x00);
+                    if (nullIdx > 0) {
+                        const keyword = textDecoder.decode(chunkData.subarray(0, nullIdx));
+                        const text = textDecoder.decode(chunkData.subarray(nullIdx + 1));
+                        metadata[keyword] = text;
+                    }
+                } else if (chunkType === 'iTXt') {
+                    const chunkData = uint8.subarray(dataStart, dataEnd);
+                    let idx = 0;
+                    const null1 = chunkData.indexOf(0x00, idx);
+                    if (null1 > 0) {
+                        const keyword = textDecoder.decode(chunkData.subarray(0, null1));
+                        idx = null1 + 1;
+                        if (idx + 2 <= chunkData.length) {
+                            const compFlag = chunkData[idx];
+                            idx += 2; // skip compFlag and compMethod
+
+                            // Skip language tag
+                            const null2 = chunkData.indexOf(0x00, idx);
+                            if (null2 !== -1) {
+                                idx = null2 + 1;
+                                // Skip translated keyword
+                                const null3 = chunkData.indexOf(0x00, idx);
+                                if (null3 !== -1) {
+                                    idx = null3 + 1;
+                                    const textBytes = chunkData.subarray(idx);
+                                    let text = '';
+                                    if (compFlag === 0) {
+                                        text = textDecoder.decode(textBytes);
+                                    } else {
+                                        // Compressed fallback (rarely used for small metadata)
+                                        text = textDecoder.decode(textBytes);
+                                    }
+                                    metadata[keyword] = text;
+                                }
+                            }
+                        }
+                    }
+                } else if (chunkType === 'IEND') {
+                    break;
+                }
+
+                pos += 12 + chunkLen;
+            }
+
+            return metadata;
+        }
+
+        function renderAll() {
+            if (loadedImages.length === 0) return;
+            contentArea.style.display = 'grid';
+
+            // Filmstrip
+            filmstrip.innerHTML = '';
+            if (loadedImages.length > 1) {
+                filmstrip.classList.remove('hidden');
+                loadedImages.forEach((item, idx) => {
+                    const thumb = document.createElement('img');
+                    thumb.src = item.url;
+                    thumb.className = idx === currentIndex ? 'active' : '';
+                    thumb.onclick = () => {
+                        currentIndex = idx;
+                        renderCurrent();
+                    };
+                    filmstrip.appendChild(thumb);
+                });
+            } else {
+                filmstrip.classList.add('hidden');
+            }
+
+            renderCurrent();
+        }
+
+        function renderCurrent() {
+            const item = loadedImages[currentIndex];
+            if (!item) return;
+
+            // Highlight filmstrip
+            Array.from(filmstrip.children).forEach((child, idx) => {
+                child.className = idx === currentIndex ? 'active' : '';
+            });
+
+            previewImg.src = item.url;
+            imageFilename.textContent = item.name;
+
+            let meta = null;
+            if (item.metadata['nano_banana_meta']) {
+                try {
+                    meta = JSON.parse(item.metadata['nano_banana_meta']);
+                } catch {}
+            }
+
+            if (meta) {
+                promptText.textContent = meta.prompt || '(無提示詞)';
+
+                metaGrid.innerHTML = '';
+                const fields = [
+                    { label: '模型 (Model)', value: meta.model },
+                    { label: '風格 (Style)', value: meta.style },
+                    { label: '比例 (Aspect Ratio)', value: meta.aspectRatio },
+                    { label: '尺寸 (Size)', value: meta.size },
+                    { label: '生成模式 (Mode)', value: meta.mode },
+                    { label: '執行方式 (Execution Mode)', value: meta.executionMode },
+                    { label: '溫度 (Temperature)', value: meta.temperature },
+                    { label: '思考層級 (Thinking Level)', value: meta.thinkingLevel },
+                    { label: '生成時間', value: meta.createdAt ? new Date(meta.createdAt).toLocaleString('zh-TW') : null },
+                ];
+
+                fields.forEach(f => {
+                    if (f.value !== undefined && f.value !== null && f.value !== '') {
+                        const div = document.createElement('div');
+                        div.className = 'meta-item';
+                        div.innerHTML = `<div class="meta-label">${f.label}</div><div class="meta-value">${f.value}</div>`;
+                        metaGrid.appendChild(div);
+                    }
+                });
+
+                if (meta.text && meta.text.trim()) {
+                    responseCard.classList.remove('hidden');
+                    responseText.textContent = meta.text.trim();
+                } else {
+                    responseCard.classList.add('hidden');
+                }
+
+                if (meta.thoughts && meta.thoughts.trim()) {
+                    thoughtsCard.classList.remove('hidden');
+                    thoughtsText.textContent = meta.thoughts.trim();
+                } else {
+                    thoughtsCard.classList.add('hidden');
+                }
+            } else if (item.metadata['parameters']) {
+                promptText.textContent = item.metadata['parameters'];
+                metaGrid.innerHTML = '<div class="meta-item"><div class="meta-label">原始參數</div><div class="meta-value">已讀取到相容 parameters 區塊</div></div>';
+                responseCard.classList.add('hidden');
+                thoughtsCard.classList.add('hidden');
+            } else {
+                promptText.textContent = '此圖片中未找到 Nano Banana 或 AI 生成的提示詞中繼資料。';
+                metaGrid.innerHTML = '<div class="meta-item"><div class="meta-label">狀態</div><div class="meta-value">無中繼資料</div></div>';
+                responseCard.classList.add('hidden');
+                thoughtsCard.classList.add('hidden');
+            }
+        }
+
+        function copyPrompt() {
+            const text = promptText.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const oldText = btnCopyPrompt.textContent;
+                btnCopyPrompt.textContent = '✓ 已複製！';
+                btnCopyPrompt.style.backgroundColor = '#10b981';
+                setTimeout(() => {
+                    btnCopyPrompt.textContent = oldText;
+                    btnCopyPrompt.style.backgroundColor = '';
+                }, 1500);
+            });
+        }
+    </script>
+</body>
+</html>

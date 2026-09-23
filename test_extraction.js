@@ -1,14 +1,17 @@
 /**
  * test_extraction.js
- * Integration test to verify extractor.js execution and conditional prompt saving rules.
+ * Integration test to verify extractor.js execution, pure PNG metadata embedding,
+ * strict thumbnail/stage asset filtering, and reader.js metadata restoration.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { readPngMetadata } = require('./reader');
 
 const TEST_JSON_PATH = path.join(__dirname, 'dummy_workspace.json');
 const OUTPUT_DIR = path.join(__dirname, 'output');
+const OUTPUT_TXT_DIR = path.join(__dirname, 'output_txt_test');
 
 // Clean up previous runs
 function cleanup() {
@@ -18,12 +21,16 @@ function cleanup() {
     if (fs.existsSync(OUTPUT_DIR)) {
         fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
     }
+    if (fs.existsSync(OUTPUT_TXT_DIR)) {
+        fs.rmSync(OUTPUT_TXT_DIR, { recursive: true, force: true });
+    }
 }
 
 // 1x1 transparent PNG base64
 const testPngBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+const testJpgBase64 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxAQEBAQEA8QDw8QDw8QDw8QEA8PDw8QFREWFhURFRUYHSggGBolGxUVITEhJSkrLi4uFx8zODMsNygtLisBCgoKDg0OGxAQGzMlHyUtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAAEAAQMBIgACEQEDEQH/xAAXAAEBAQEAAAAAAAAAAAAAAAAAAQID/8QAFhEBAQEAAAAAAAAAAAAAAAAAAAER/9oADAMBAAIQAxAAAAH4gD//xAAXEAADAQAAAAAAAAAAAAAAAAAAAREx/9oACAEBAAEFAtN//8QAFhEBAQEAAAAAAAAAAAAAAAAAABEh/9oACAEDAQE/AYf/xAAVEQEBAAAAAAAAAAAAAAAAAAAQEf/aAAgBAgEBPwGH/8QAFxABAQEBAAAAAAAAAAAAAAAAAQARIf/aAAgBAQAGPwJrH//EABsQAQEBAQADAQAAAAAAAAAAAAERACExQVFh/9oACAEBAAE/IQYR0VXYs9hH6V//2gAMAwEAAgADAAAAEPP/xAAVEQEBAAAAAAAAAAAAAAAAAAAQEf/aAAgBAwEBPxBf/8QAFhEBAQEAAAAAAAAAAAAAAAAAABEh/9oACAECAQE/EFf/xAAaEAEBAQEBAQEAAAAAAAAAAAABEQAhMUFh/9oACAEBAAE/EDicY4x3g5TLFrzGF1R5i//Z';
 
-// Create a dummy workspace JSON matching the new requirements
+// Create a dummy workspace JSON matching real Nano Banana Ultra exports
 const mockWorkspace = {
     format: 'nbu-workspace-snapshot',
     version: 1,
@@ -38,8 +45,14 @@ const mockWorkspace = {
                 style: 'Anime',
                 aspectRatio: '1:1',
                 size: '2K',
+                mode: 'Text to Image',
+                executionMode: 'single-turn',
+                temperature: 0.7,
+                thinkingLevel: 'normal',
                 createdAt: Date.now() - 20000,
                 savedFilename: 'banana_yellow.png',
+                thumbnailSavedFilename: 'banana_yellow-thumbnail.jpg',
+                text: '這是一張可愛香蕉的模型說明文字',
                 thoughts: '思考過程：正常繪製成品。'
             },
             {
@@ -51,7 +64,6 @@ const mockWorkspace = {
                 aspectRatio: '16:9',
                 size: '4K',
                 createdAt: Date.now() - 10000,
-                // savedFilename is missing or failed
                 thoughts: '思考過程：沒有產出成品，但生成了思考圖。',
                 resultParts: [
                     {
@@ -64,24 +76,44 @@ const mockWorkspace = {
                 ]
             },
             {
-                // Item 3: Completely Failed (has prompt but no media/images at all)
-                id: 'item_3_completely_failed',
+                // Item 3: Item with variant output image
+                id: 'item_3_variant',
+                prompt: '變體香蕉測試 🍌✨',
+                model: 'gemini-3.1-flash-image',
+                style: 'Pixel Art',
+                aspectRatio: '1:1',
+                size: '1K',
+                createdAt: Date.now() - 5000,
+                savedFilename: 'banana_primary.png',
+                resultParts: [
+                    {
+                        sequence: 1,
+                        kind: 'output-image',
+                        imageUrl: '',
+                        mimeType: 'image/png',
+                        savedFilename: 'banana_variant-1.png'
+                    }
+                ]
+            },
+            {
+                // Item 4: Completely Failed (has prompt but no media/images at all)
+                id: 'item_4_completely_failed',
                 prompt: '失敗的生成項目（無任何圖片） ❌',
                 model: 'gemini-3.1-flash-image',
                 style: 'None',
                 aspectRatio: '1:1',
                 size: '2K',
                 createdAt: Date.now(),
-                thoughts: '思考過程：此項目沒有生成任何圖片，因此不應儲存提示詞。'
+                thoughts: '思考過程：此項目沒有生成任何圖片，因此不應儲存任何檔案。'
             }
         ],
-        stagedAssets: [],
-        workflowLogs: [],
-        workspaceSession: { activeResult: null },
-        branchState: { nameOverrides: {} },
-        conversationState: { byBranchOriginId: {} },
-        viewState: { generatedImageUrls: [], selectedImageIndex: 0, selectedHistoryId: null },
-        composerState: {}
+        stagedAssets: [
+            {
+                id: 'stage_asset_1',
+                savedFilename: 'banana_stage_reference.png',
+                role: 'stage-source'
+            }
+        ]
     },
     assets: {
         savedImages: {
@@ -89,103 +121,185 @@ const mockWorkspace = {
                 dataUrl: testPngBase64,
                 savedAt: Date.now() - 20000
             },
+            'banana_yellow-thumbnail.jpg': {
+                dataUrl: testJpgBase64,
+                savedAt: Date.now() - 20000
+            },
             'banana_space-thought-0.png': {
                 dataUrl: testPngBase64,
                 savedAt: Date.now() - 10000
+            },
+            'banana_primary.png': {
+                dataUrl: testPngBase64,
+                savedAt: Date.now() - 5000
+            },
+            'banana_variant-1.png': {
+                dataUrl: testPngBase64,
+                savedAt: Date.now() - 5000
+            },
+            'banana_stage_reference.png': {
+                dataUrl: testPngBase64,
+                savedAt: Date.now() - 25000
             }
         }
     }
 };
 
-console.log('--- Extractor Integration Test (Revised Rules) ---');
+console.log('--- Extractor & Metadata Reader Integration Test ---');
 
 try {
     cleanup();
 
-    // 1. Create dummy workspace file
+    // 1. Create dummy workspace JSON
     console.log('Generating dummy workspace JSON...');
     fs.writeFileSync(TEST_JSON_PATH, JSON.stringify(mockWorkspace, null, 2), 'utf8');
 
-    // 2. Execute extractor.js
-    console.log('Executing extractor.js CLI...');
+    // 2. Execute extractor.js (Default Mode: Pure PNG Metadata, No TXT)
+    console.log('\n[Test 1] Executing extractor.js CLI (Default Mode: Pure PNGs, No TXT)...');
     execSync(`node extractor.js "${TEST_JSON_PATH}"`, { stdio: 'inherit' });
 
     // 3. Verify output files
-    console.log('\nVerifying output files...');
+    console.log('\nVerifying output files in default mode...');
+    const outputFiles = fs.readdirSync(OUTPUT_DIR);
+    console.log('Output directory contents:', outputFiles);
 
-    // Expected files that MUST exist
-    const expectedFiles = [
+    // Expected images that MUST exist
+    const expectedImages = [
         'banana_yellow.png',
-        'banana_yellow.txt',
         'banana_space-thought-0.png',
-        'banana_space-thought-0.txt'
+        'banana_primary.png',
+        'banana_variant-1.png'
     ];
 
     let testPassed = true;
-    expectedFiles.forEach(file => {
-        const filePath = path.join(OUTPUT_DIR, file);
-        if (fs.existsSync(filePath)) {
-            console.log(`✓ [預期存在] 檔案存在: "${file}"`);
+    expectedImages.forEach(file => {
+        if (outputFiles.includes(file)) {
+            console.log(`  ✓ [預期存在] 圖片存在: "${file}"`);
         } else {
-            console.error(`❌ [預期存在] 檔案遺失: "${file}"`);
+            console.error(`  ❌ [預期存在] 圖片遺失: "${file}"`);
             testPassed = false;
         }
     });
 
-    // Files that MUST NOT exist
-    const unexpectedFiles = [
-        'banana_space.txt',
-        'banana_space.png',
-        'image_no_media_item_3.txt',
-        'image_no_media_item_3_completely_failed.txt'
+    // Verify NO TXT files exist in default mode
+    const txtFiles = outputFiles.filter(f => f.endsWith('.txt'));
+    if (txtFiles.length === 0) {
+        console.log('  ✓ [驗證成功] 預設模式下未產生任何 .txt 檔案，保持輸出目錄極致整潔！');
+    } else {
+        console.error('  ❌ [驗證失敗] 輸出目錄中不應存在 .txt 檔案:', txtFiles);
+        testPassed = false;
+    }
+
+    // Verify thumbnails and staged assets are completely filtered out
+    const forbiddenFiles = [
+        'banana_yellow-thumbnail.jpg',
+        'banana_stage_reference.png'
     ];
-
-    // Check directory to make sure no failed prompt TXT is written
-    const filesInOutputDir = fs.readdirSync(OUTPUT_DIR);
-    console.log('\nOutput directory contents:', filesInOutputDir);
-
-    filesInOutputDir.forEach(file => {
-        if (file.includes('failed') || file.includes('item_3') || file === 'banana_space.txt') {
-            console.error(`❌ [預期不存在] 錯誤生成了無關聯圖片的檔案: "${file}"`);
+    forbiddenFiles.forEach(file => {
+        if (outputFiles.includes(file)) {
+            console.error(`  ❌ [驗證失敗] 縮圖或舞台素材未被過濾，錯誤存在: "${file}"`);
             testPassed = false;
+        } else {
+            console.log(`  ✓ [驗證成功] 成功排除非生成素材: "${file}"`);
         }
     });
 
-    if (testPassed) {
-        console.log('\n✓ 成功驗證：完全沒有圖片的項目 (Item 3) 沒有產生任何提示詞檔案！');
-        console.log('✓ 成功驗證：有思考圖但無成品圖的項目 (Item 2) 成功提取思考圖與提示詞 TXT！');
-    }
+    // 4. Verify embedded PNG metadata using reader.js
+    console.log('\n[Test 2] Verifying embedded PNG metadata via reader.js...');
+    const yellowPngBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_yellow.png'));
+    const yellowMeta = readPngMetadata(yellowPngBuf);
 
-    // 4. Verify TXT contents
-    console.log('\nVerifying TXT files content...');
-    const yellowTxtContent = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_yellow.txt'), 'utf8');
-    if (yellowTxtContent.includes('可愛的黃色小香蕉 🍌') && yellowTxtContent.includes('思考過程：正常繪製成品。')) {
-        console.log('✓ banana_yellow.txt content is correct.');
+    if (yellowMeta.nano_banana_meta) {
+        const parsed = JSON.parse(yellowMeta.nano_banana_meta);
+        if (
+            parsed.prompt === '可愛的黃色小香蕉 🍌' &&
+            parsed.model === 'gemini-3.1-flash-image' &&
+            parsed.style === 'Anime' &&
+            parsed.aspectRatio === '1:1' &&
+            parsed.size === '2K' &&
+            parsed.mode === 'Text to Image' &&
+            parsed.executionMode === 'single-turn' &&
+            parsed.temperature === 0.7 &&
+            parsed.text === '這是一張可愛香蕉的模型說明文字' &&
+            parsed.thoughts.includes('正常繪製成品')
+        ) {
+            console.log('  ✓ [Metadata 驗證] banana_yellow.png 內嵌結構化資料完全符合預期！');
+        } else {
+            console.error('  ❌ [Metadata 驗證] banana_yellow.png 內嵌資料不符:', parsed);
+            testPassed = false;
+        }
     } else {
-        console.error('yellowTxtContent:', yellowTxtContent);
+        console.error('  ❌ [Metadata 驗證] 未找到 nano_banana_meta 區塊！');
         testPassed = false;
     }
 
-    const thoughtTxtContent = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_space-thought-0.txt'), 'utf8');
-    if (thoughtTxtContent.includes('太空中的香蕉船 🚀') && thoughtTxtContent.includes('沒有產出成品，但生成了思考圖。')) {
-        console.log('✓ banana_space-thought-0.txt content is correct.');
+    if (yellowMeta.parameters && yellowMeta.parameters.includes('可愛的黃色小香蕉 🍌')) {
+        console.log('  ✓ [相容性驗證] banana_yellow.png 包含標準 AI parameters 區塊！');
     } else {
-        console.error('thoughtTxtContent:', thoughtTxtContent);
+        console.error('  ❌ [相容性驗證] 缺少 parameters 區塊！');
         testPassed = false;
     }
 
+    // Verify thinking image metadata
+    const spacePngBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_space-thought-0.png'));
+    const spaceMeta = readPngMetadata(spacePngBuf);
+    if (spaceMeta.nano_banana_meta && spaceMeta.nano_banana_meta.includes('太空中的香蕉船 🚀')) {
+        console.log('  ✓ [思考圖驗證] banana_space-thought-0.png 思考圖內嵌參數正確！');
+    } else {
+        console.error('  ❌ [思考圖驗證] 思考圖中繼資料錯誤！');
+        testPassed = false;
+    }
+
+    // 5. Test optional --txt flag
+    console.log('\n[Test 3] Executing extractor.js with optional --txt flag...');
+    execSync(`node extractor.js "${TEST_JSON_PATH}" -o "${OUTPUT_TXT_DIR}" --txt`, { stdio: 'inherit' });
+    const txtOutputFiles = fs.readdirSync(OUTPUT_TXT_DIR);
+    if (txtOutputFiles.includes('banana_yellow.txt') && txtOutputFiles.includes('banana_yellow.png')) {
+        const txtContent = fs.readFileSync(path.join(OUTPUT_TXT_DIR, 'banana_yellow.txt'), 'utf8');
+        if (txtContent.includes('可愛的黃色小香蕉 🍌') && txtContent.includes('生成模式 (Mode): Text to Image')) {
+            console.log('  ✓ [--txt 旗標驗證] 成功輸出豐富格式之 .txt 提示詞檔！');
+        } else {
+            console.error('  ❌ [--txt 旗標驗證] txt 內容缺少豐富欄位！');
+            testPassed = false;
+        }
+    } else {
+        console.error('  ❌ [--txt 旗標驗證] 未輸出預期之 txt 檔案！');
+        testPassed = false;
+    }
+
+    // 6. Test with real Nano Banana Ultra fixture
+    const realFixturePath = 'd:\\Playground\\Labs\\App-Nano_Banana_Ultra\\e2e\\fixtures\\restore\\ui-import-lite-embedded-workspace.json';
+    if (fs.existsSync(realFixturePath)) {
+        console.log('\n[Test 4] Testing with real Nano Banana Ultra fixture...');
+        const REAL_OUTPUT_DIR = path.join(__dirname, 'output_real_test');
+        execSync(`node extractor.js "${realFixturePath}" -o "${REAL_OUTPUT_DIR}"`, { stdio: 'inherit' });
+        const realFiles = fs.readdirSync(REAL_OUTPUT_DIR);
+        console.log('Real fixture output contents:', realFiles);
+
+        // Thumbnail (.jpg) and Stage asset must NOT be in real output
+        if (!realFiles.some(f => f.includes('thumbnail')) && !realFiles.some(f => f.includes('stage'))) {
+            console.log('  ✓ [真實工作區測試] 縮圖 (.jpg) 與舞台素材 (stage) 100% 成功排除！');
+        } else {
+            console.error('  ❌ [真實工作區測試] 縮圖或舞台素材遭到外洩:', realFiles);
+            testPassed = false;
+        }
+        fs.rmSync(REAL_OUTPUT_DIR, { recursive: true, force: true });
+    }
+
     if (testPassed) {
-        console.log('\nResult: ALL REVISED RULES TESTS PASSED SUCCESSFULLY! 🍌🚀🎉');
+        console.log('\n==================================================');
+        console.log('Result: ALL INTEGRATION TESTS PASSED! 🍌🚀🎉');
+        console.log('==================================================\n');
         cleanup();
         process.exit(0);
     } else {
-        console.error('\nResult: TEST FAILED ❌');
+        console.error('\nResult: INTEGRATION TESTS FAILED ❌');
         cleanup();
         process.exit(1);
     }
 
 } catch (error) {
-    console.error('\nResult: TEST EXECUTION FAILED! ❌');
+    console.error('\nResult: TEST EXECUTION ENCOUNTERED ERROR ❌');
     console.error(error.message);
     cleanup();
     process.exit(1);

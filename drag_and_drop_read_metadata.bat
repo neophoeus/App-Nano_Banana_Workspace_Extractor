@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title Nano Banana Ultra - 工作區檔案提取器 (Workspace Extractor)
+title Nano Banana Ultra - 圖片中繼資料讀取器 (PNG Metadata Reader)
 
 :: Check if Node.js is installed
 where node >nul 2>nul
@@ -19,35 +19,27 @@ if %errorlevel% neq 0 (
 :: Check if a file was dragged onto the bat file
 if "%~1" == "" (
     echo ================================================================
-    echo   Nano Banana Ultra - 工作區檔案提取器
+    echo   Nano Banana Ultra - 圖片中繼資料讀取器
     echo ================================================================
     echo   使用方法：
-    echo     直接將一個或多個 .json 工作區檔案拖曳到這個批次檔上！
+    echo     直接將一張或多張 .png 圖片拖曳到這個批次檔上！
     echo.
     echo   範例：
-    echo     [拖曳 workspace.json] -^> [drag_and_drop_extract.bat]
+    echo     [拖曳 banana_yellow.png] -^> [drag_and_drop_read_metadata.bat]
     echo ================================================================
     echo.
     pause
     exit /b
 )
 
-:: Run node extractor with all dragged arguments
-node "%~dp0extractor.js" %*
-
-if %errorlevel% neq 0 (
-    echo.
-    echo [ERROR] 提取過程發生錯誤！請檢查上方錯誤訊息。
-    echo.
-    pause
-    exit /b 1
+:: Process all dragged image files
+for %%f in (%*) do (
+    node "%~dp0reader.js" "%%~f"
 )
 
+echo.
 echo ----------------------------------------------------------------
-echo   提取完成！按任意鍵開啟 output 目錄，或直接按右上角 [X] 關閉...
+echo   已檢視完畢，按任意鍵關閉視窗...
 echo ----------------------------------------------------------------
 pause >nul
-if exist "%~dp0output" (
-    start "" "%~dp0output"
-)
 exit

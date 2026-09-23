@@ -1,0 +1,24 @@
+{
+  "name": "nano-banana-workspace-extractor",
+  "version": "1.0.0",
+  "description": "Zero-dependency workspace extractor and PNG metadata manager for Nano Banana Ultra lite",
+  "main": "extractor.js",
+  "bin": {
+    "nbu-extract": "./extractor.js",
+    "nbu-read": "./reader.js"
+  },
+  "scripts": {
+    "start": "node extractor.js",
+    "test": "node test_extraction.js",
+    "read": "node reader.js"
+  },
+  "keywords": [
+    "nano-banana",
+    "workspace-extractor",
+    "png-metadata",
+    "itxt",
+    "ai-prompts"
+  ],
+  "author": "neo",
+  "license": "MIT"
+}

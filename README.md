@@ -1,48 +1,74 @@
-# Nano Banana Workspace Extractor
+# Nano Banana Workspace Extractor & Metadata Suite `v1.0.0`
 
-English | [繁體中文](README.zh-TW.md)
+English | [繁體中文](README.zh-TW.md) | [Changelog](CHANGELOG.md)
 
-An image and prompt extractor for Workspace files exported from Nano Banana Ultra *lite*.
+A zero-dependency workspace extractor and PNG metadata management suite designed for workspace snapshot JSON files exported from **Nano Banana Ultra *lite***.
 
 ---
 
-## Features
+## Key Features
 
-*   **Image Extraction**: Restores and exports both final generated images and intermediate thinking process images from the workspace JSON.
-*   **Prompt TXT Generation**: Saves the prompt, model parameters, style, and thinking process into a `.txt` file with the matching name.
-*   **Smart Saving Rules**:
-    *   **Save only if images exist**: The prompt `.txt` file is created ONLY if at least one image (product or thought image) is successfully exported.
-    *   **Skip completely failed runs**: If a run failed and produced no images (and no thinking images), it is skipped entirely. No junk `.txt` files are created.
-    *   **Thought image exception**: If a run has no final image but contains a thinking image (`thought-image`), it still exports the thinking image and creates the prompt `.txt` file.
-*   **Zero Dependencies**: Built using standard Node.js native APIs. No complex setup or installation required.
-*   **Drag-and-Drop**: Includes a Windows batch script to run the extractor simply by dragging and dropping your file.
+*   **Pure PNG Image Export (Zero Clutter)**:
+    *   Directly injects prompts, models, styles, aspect ratios, modes, and thoughts into standard PNG `iTXt` metadata chunks.
+    *   Keeps the output directory clean and free of hundreds of redundant `.txt` files.
+*   **100% Compatible with Nano Banana Ultra**:
+    *   Fully restores product images, variant images, and intermediate thinking process images (`thought-image`).
+    *   Smart Filtering: Automatically filters out thumbnails (`.jpg`) and staged reference assets, exporting only pure generated content.
+*   **Dual Metadata Inspection Tools**:
+    *   **Terminal Drag & Drop**: Includes [`drag_and_drop_read_metadata.bat`](drag_and_drop_read_metadata.bat). Drop any PNG to instantly print its full prompt and parameters in the console.
+    *   **Offline Web Viewer**: Includes [`viewer.html`](viewer.html). Double-click to open in any browser (100% offline). Drop images to view high-res previews alongside parameters with a **1-click Copy Prompt** button!
+    *   **Industry Standard**: Compatible with WebUI, ComfyUI, Civitai, and standard image viewers supporting the PNG `parameters` chunk.
+*   **Zero Dependencies**:
+    *   Built purely with native Node.js APIs (including pure JS CRC-32 and PNG chunk injector). No `npm install` needed.
+    *   Features a custom Buffer JSON parser to safely parse multi-gigabyte workspace exports without hitting V8 string length limits.
 
 ---
 
 ## Quick Start
 
-### Option A: Drag & Drop (Windows)
-1.  Drag and drop your exported `.json` workspace file onto [drag_and_drop_extract.bat](drag_and_drop_extract.bat).
-2.  The script runs the extraction automatically and closes the window upon completion. The extracted files will be in the `output` folder.
+### 1. Extract Images from Workspace JSON
 
-### Option B: CLI command
-Run the following command in your terminal using Node.js:
+#### Option A: Drag & Drop (Recommended for Windows)
+1. Drag and drop one or more `.json` workspace files onto [drag_and_drop_extract.bat](drag_and_drop_extract.bat).
+2. The script processes all files, displays summary statistics, and allows you to open the `output` folder with a single keypress.
+
+#### Option B: CLI command
 ```bash
-node extractor.js <workspace_file.json> [output_directory]
+# Basic run (extracts to ./output with embedded PNG metadata)
+node extractor.js <workspace_file.json>
+
+# Multi-file support and custom output directory
+node extractor.js workspace1.json workspace2.json -o D:\MyImages
+
+# Optional: Also output traditional .txt sidecars if needed
+node extractor.js workspace.json --txt
 ```
-*   `workspace_file.json`: Path to the workspace JSON file.
-*   `output_directory` *(Optional)*: Target export path. Defaults to `./output` in the current folder.
+
+---
+
+### 2. View Prompt & Metadata
+
+#### Option A: Drag to Batch Reader
+* Drag any extracted `.png` image onto [drag_and_drop_read_metadata.bat](drag_and_drop_read_metadata.bat) to view the prompt, model, style, size, and thinking process.
+
+#### Option B: Use the Offline Web Viewer [viewer.html](viewer.html)
+1. Double-click `viewer.html` to open it in your browser.
+2. Drag and drop one or multiple `.png` images onto the page.
+3. Enjoy image preview, filmstrip navigation, structured parameters, and the **Copy Prompt** button!
+
+#### Option C: CLI
+```bash
+node reader.js <image1.png> [image2.png ...]
+```
 
 ---
 
 ## Export Directory Structure
 
-Extracted files will be saved in the `output` folder with their complete original filenames:
-
 ```text
 output/
-├── image_1717462000000.png              # Product image
-├── image_1717462000000.txt              # Prompt and parameters for the image
-├── image_1717462000000-thought-0.png    # Thinking process image
-└── image_1717462000000-thought-0.txt    # Prompt text file matched to the thought image (created if product image is missing but thought image exists)
+├── image_1717462000000.png              # Product image (with embedded prompt & parameters)
+├── image_1717462000000-variant-1.png    # Variant image (with embedded parameters)
+└── image_1717462000000-thought-0.png    # Thinking process image (with embedded thoughts)
 ```
+*(Clean and neat directory with zero `.txt` clutter!)*
