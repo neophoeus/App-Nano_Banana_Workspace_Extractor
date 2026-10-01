@@ -1,4 +1,4 @@
-# Nano Banana 工作區檔案提取與中繼資料工具 `v1.1.0`
+# Nano Banana 工作區檔案提取與中繼資料工具 `v1.1.1`
 
 [English](README.md) | 繁體中文 | [更新日誌 (Changelog)](CHANGELOG.md)
 
@@ -16,7 +16,7 @@
     *   完整擷取成品圖、變體圖（Variant）與思考過程圖（Thought Image），全面相容 PNG 與 Gemini 原生 JPEG 輸出。
     *   智慧過濾：自動排除所有縮圖（Thumbnail）與舞台參考素材（Staged Assets），只保留實際生成的內容。
 *   **專屬中繼資料讀取方案（想看提示詞超方便）**：
-    *   **終端機拖曳讀取**：內附 [`drag_and_drop_read_metadata.bat`](drag_and_drop_read_metadata.bat)，圖片一拖立即在終端機列印出完整提示詞與參數（支援 `.png`、`.jpg`、`.jpeg`）。
+    *   **拖曳直接開啟視覺化檢視器（免 Node.js 原生秒開）**：內附 [`drag_and_drop_read_metadata.bat`](drag_and_drop_read_metadata.bat)，直接將單張、多張圖片或甚至整個資料夾拖入批次檔，會自動於預設瀏覽器開啟 [`viewer.html`](viewer.html) 並立即載入呈現（採用 Windows 原生 PowerShell，**完全無須安裝 Node.js**）。
     *   **離線網頁視覺化檢視器**：內附 [`viewer.html`](viewer.html)，雙擊用瀏覽器開啟即可拖入圖片，左側看圖、右側對照參數，並支援**一鍵複製提示詞**！
     *   **業界相容性**：內嵌參數採用標準 `parameters` 關鍵字，相容 WebUI / ComfyUI / Civitai 等 AI 圖片檢視工具。
 *   **零依賴 (Zero Dependencies)**：
@@ -49,8 +49,8 @@ node extractor.js workspace.json --txt
 
 ### 2. 檢視圖片提示詞與參數 (Read Metadata)
 
-#### 方式 A：拖曳至讀取批次檔
-* 直接將任何一張提取出來的 `.png` 或 `.jpg` / `.jpeg` 圖片，拖曳到 [drag_and_drop_read_metadata.bat](drag_and_drop_read_metadata.bat) 上，視窗將立即列印該圖的提示詞、模型、風格、尺寸與思考過程。
+#### 方式 A：拖曳至讀取批次檔（推薦，自動於瀏覽器開啟）
+* 直接將任何一張（或多張）提取出來的 `.png` 或 `.jpg` / `.jpeg` 圖片，甚至是整個資料夾，拖曳到 [drag_and_drop_read_metadata.bat](drag_and_drop_read_metadata.bat) 上，瀏覽器將自動開啟 [viewer.html](viewer.html) 並立即呈現圖片、提示詞、模型、風格、尺寸與思考過程（免裝 Node.js！）。
 
 #### 方式 B：使用離線網頁檢視器 [viewer.html](viewer.html)
 1. 雙擊打開本機的 `viewer.html`（任何瀏覽器皆可，100% 離線運行）。

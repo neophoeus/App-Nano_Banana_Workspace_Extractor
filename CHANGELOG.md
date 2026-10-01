@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.1 - 2026-10-01
+
+- Release title: Nano Banana Workspace Extractor 1.1.1 - Windows Native Drag-and-Drop Visual Viewer Integration (Zero Node.js Required)
+- Release summary:
+    - **Windows Native Drag-and-Drop Web Viewer Integration (`drag_and_drop_read_metadata.bat`, `launch_viewer.ps1`)**: Re-engineered the metadata drag-and-drop workflow using pure Windows native PowerShell. Dragging images onto `drag_and_drop_read_metadata.bat` now instantly launches `viewer.html` in the user's default browser with full high-resolution image preview, thumbnails, generation parameters, and one-click prompt copying—**completely eliminating the need for Node.js installation**.
+    - **Folder & Multi-Image Drag-and-Drop Support**: Users can now drag single images, multiple images, or entire output directories (e.g. `output/`) directly onto the batch file; the script automatically scans and loads all `.png`, `.jpg`, and `.jpeg` images.
+    - **Client-Side Session Auto-Loading (`viewer.html`, `session_data.js`)**: Added intelligent session detection via `session_data.js` and URL hash `#drop`. Image data URLs are seamlessly restored into in-memory Blob Object URLs, ensuring the web viewer remains fully functional even after the launcher terminal exits.
+    - **Terminal Streamlining & Codepage Safety**: Batch launcher terminates cleanly within ~0.3s without lingering background processes or firewall warnings. Direct double-clicking of `viewer.html` or the batch file safely preserves the clean interactive dropzone.
+
 ## v1.1.0 - 2026-09-23
 
 - Release title: Nano Banana Workspace Extractor 1.1.0 - Full PNG & JPEG Dual-Format Lossless Metadata Embedding & Reading

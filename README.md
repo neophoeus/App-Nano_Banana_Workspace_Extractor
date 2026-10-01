@@ -1,4 +1,4 @@
-# Nano Banana Workspace Extractor & Metadata Suite `v1.1.0`
+# Nano Banana Workspace Extractor & Metadata Suite `v1.1.1`
 
 English | [繁體中文](README.zh-TW.md) | [Changelog](CHANGELOG.md)
 
@@ -16,7 +16,7 @@ A zero-dependency workspace extractor and PNG/JPEG metadata management suite des
     *   Fully restores product images, variant images, and intermediate thinking process images (`thought-image`), supporting both PNG and native Gemini JPEG (`data:image/jpeg;base64`) outputs.
     *   Smart Filtering: Automatically filters out thumbnails (`.jpg`) and staged reference assets, exporting only pure generated content.
 *   **Dual Metadata Inspection Tools**:
-    *   **Terminal Drag & Drop**: Includes [`drag_and_drop_read_metadata.bat`](drag_and_drop_read_metadata.bat). Drop any PNG or JPEG to instantly print its full prompt and parameters in the console.
+    *   **Native Drag & Drop to Web Viewer (Zero Node.js Required)**: Includes [`drag_and_drop_read_metadata.bat`](drag_and_drop_read_metadata.bat). Drag and drop single or multiple PNG/JPEG images, or even an entire folder, to automatically open [`viewer.html`](viewer.html) in your default browser with instant visual preview and structured metadata (powered by Windows native PowerShell, **no Node.js installation needed**).
     *   **Offline Web Viewer**: Includes [`viewer.html`](viewer.html). Double-click to open in any browser (100% offline). Drop PNG/JPEG images to view high-res previews alongside parameters with a **1-click Copy Prompt** button!
     *   **Industry Standard**: Compatible with WebUI, ComfyUI, Civitai, and standard image viewers supporting the `parameters` metadata chunk.
 *   **Zero Dependencies**:
@@ -49,8 +49,8 @@ node extractor.js workspace.json --txt
 
 ### 2. View Prompt & Metadata
 
-#### Option A: Drag to Batch Reader
-* Drag any extracted `.png` or `.jpg` / `.jpeg` image onto [drag_and_drop_read_metadata.bat](drag_and_drop_read_metadata.bat) to view the prompt, model, style, size, and thinking process.
+#### Option A: Drag to Batch Reader (Recommended, Opens in Browser)
+* Drag any extracted `.png` or `.jpg` / `.jpeg` image(s), or even an entire output folder, onto [drag_and_drop_read_metadata.bat](drag_and_drop_read_metadata.bat). Your browser will automatically open [viewer.html](viewer.html) displaying image previews, structured parameters, and prompts (powered natively by Windows, zero Node.js required!).
 
 #### Option B: Use the Offline Web Viewer [viewer.html](viewer.html)
 1. Double-click `viewer.html` to open it in your browser.

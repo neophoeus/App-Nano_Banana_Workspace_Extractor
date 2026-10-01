@@ -3,6 +3,7 @@
 
 # Temp / Test files
 dummy_workspace.json
+session_data.js
 
 # Node dependencies (just in case)
 node_modules/

@@ -262,6 +262,7 @@
             display: none !important;
         }
     </style>
+    <script src="session_data.js"></script>
 </head>
 <body>
 
@@ -349,6 +350,48 @@
 
         let loadedImages = [];
         let currentIndex = 0;
+
+        // Auto-load session images if launched via drag_and_drop_read_metadata.bat
+        window.addEventListener('DOMContentLoaded', async () => {
+            const hasDropHash = window.location.hash === '#drop';
+            const session = window.__DROP_SESSION__;
+            const isFreshSession = session && session.timestamp && (Date.now() - session.timestamp < 30000);
+
+            if ((hasDropHash || isFreshSession) && session && Array.isArray(session.images) && session.images.length > 0) {
+                await loadSessionImages(session.images);
+                // Clean up in-memory session and URL hash to avoid duplicate loading on refresh
+                window.__DROP_SESSION__ = null;
+                if (window.location.hash === '#drop') {
+                    history.replaceState(null, '', window.location.pathname);
+                }
+            }
+        });
+
+        async function loadSessionImages(images) {
+            loadedImages = [];
+            for (const item of images) {
+                try {
+                    const res = await fetch(item.data);
+                    const blob = await res.blob();
+                    const buffer = await blob.arrayBuffer();
+                    const metadata = parseImageMetadata(buffer);
+                    const url = URL.createObjectURL(blob);
+                    loadedImages.push({
+                        file: blob,
+                        name: item.name,
+                        url,
+                        metadata
+                    });
+                } catch (err) {
+                    console.error('載入圖片失敗:', item.name, err);
+                }
+            }
+
+            if (loadedImages.length > 0) {
+                currentIndex = 0;
+                renderAll();
+            }
+        }
 
         // Drag and drop event handlers
         window.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
