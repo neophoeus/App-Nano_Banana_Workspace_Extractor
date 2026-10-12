@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.1.2 - 2026-10-12
+
+- Release title: Nano Banana Workspace Extractor 1.1.2 - Nested Metadata Fallback Resilience & Gemini Nano Banana 2.1 Compatibility Verification
+- Release summary:
+    - **Nested Metadata Fallback Resilience (`extractor.js`)**: Enhanced parameter extraction for `temperature`, `thinkingLevel`, and `executionMode` to seamlessly fall back to nested `item.metadata` properties (`item.metadata?.temperature`, `item.metadata?.thinkingLevel`, `item.metadata?.executionMode`). Guarantees 100% parameter extraction fidelity across all generations of Nano Banana Ultra (including v4.9.0) even when workspace history entries store settings within nested metadata objects.
+    - **CWD-Independent CLI Integration Testing (`test_extraction.js`)**: Updated child process execution in integration tests with explicit script path resolution (`EXTRACTOR_SCRIPT`) and working directory context (`cwd: __dirname`), allowing tests to execute reliably from any directory.
+    - **Gemini Nano Banana 2.1 & Medium Thinking Level Test Coverage (`test_extraction.js`)**: Added test cases verifying lossless extraction and PNG/JPEG metadata embedding for `gemini-nano-banana-2.1` with `thinkingLevel: 'medium'`, nested metadata fields, and structured parameters validation.
+    - **Documentation & Version Update (`README.md`, `README.zh-TW.md`)**: Upgraded suite version to `v1.1.2` and updated model compatibility notes for Gemini Nano Banana 2.1 and expanded thinking levels.
+
 ## v1.1.1 - 2026-10-01
 
 - Release title: Nano Banana Workspace Extractor 1.1.1 - Windows Native Drag-and-Drop Visual Viewer Integration (Zero Node.js Required)

@@ -1,4 +1,4 @@
-# Nano Banana Workspace Extractor & Metadata Suite `v1.1.1`
+# Nano Banana Workspace Extractor & Metadata Suite `v1.1.2`
 
 English | [繁體中文](README.zh-TW.md) | [Changelog](CHANGELOG.md)
 
@@ -12,8 +12,9 @@ A zero-dependency workspace extractor and PNG/JPEG metadata management suite des
     *   **PNG Support**: Injects prompts, models, styles, aspect ratios, modes, and thoughts directly into standard PNG `iTXt` metadata chunks.
     *   **JPEG Support**: Injects prompts and structured metadata into standard JPEG COM (`0xFF 0xFE`) segments without re-encoding or compressing pixels (100% lossless).
     *   Keeps the output directory clean and free of hundreds of redundant `.txt` files.
-*   **100% Compatible with Nano Banana Ultra**:
+*   **100% Compatible with Nano Banana Ultra (v4.9.0+)**:
     *   Fully restores product images, variant images, and intermediate thinking process images (`thought-image`), supporting both PNG and native Gemini JPEG (`data:image/jpeg;base64`) outputs.
+    *   Supports all active Gemini image models (`gemini-nano-banana-2.1`, `gemini-3.1-flash-image`, `gemini-3.1-flash-lite-image`, `gemini-3-pro-image`, `gemini-2.5-flash-image`) with resilient nested metadata fallback and full thinking levels (`minimal`, `medium`, `high`).
     *   Smart Filtering: Automatically filters out thumbnails (`.jpg`) and staged reference assets, exporting only pure generated content.
 *   **Dual Metadata Inspection Tools**:
     *   **Native Drag & Drop to Web Viewer (Zero Node.js Required)**: Includes [`drag_and_drop_read_metadata.bat`](drag_and_drop_read_metadata.bat). Drag and drop single or multiple PNG/JPEG images, or even an entire folder, to automatically open [`viewer.html`](viewer.html) in your default browser with instant visual preview and structured metadata (powered by Windows native PowerShell, **no Node.js installation needed**).

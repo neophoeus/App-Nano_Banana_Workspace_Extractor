@@ -1,4 +1,4 @@
-# Nano Banana 工作區檔案提取與中繼資料工具 `v1.1.1`
+# Nano Banana 工作區檔案提取與中繼資料工具 `v1.1.2`
 
 [English](README.md) | 繁體中文 | [更新日誌 (Changelog)](CHANGELOG.md)
 
@@ -12,8 +12,9 @@
     *   **PNG 格式**：直接將提示詞與生成參數完整內嵌至 PNG 圖片的 `iTXt` 區塊。
     *   **JPEG 格式**：支援 Google Gemini 模型產出之原生 JPEG (`.jpg`)，直接將結構化資料與標準參數注入標準 COM (`0xFF 0xFE`) 註解區塊，**不重新編碼或壓縮像素，100% 保持原圖無損畫質**。
     *   輸出目錄只保留清晰純粹的 `.png` 與 `.jpg` 圖片，**不再產生大量雜亂的 `.txt` 檔案**。
-*   **與 Nano Banana Ultra 100% 相容**：
+*   **與 Nano Banana Ultra (v4.9.0+) 100% 相容**：
     *   完整擷取成品圖、變體圖（Variant）與思考過程圖（Thought Image），全面相容 PNG 與 Gemini 原生 JPEG 輸出。
+    *   支援所有現行活躍的 Gemini 影像模型（`gemini-nano-banana-2.1`、`gemini-3.1-flash-image`、`gemini-3.1-flash-lite-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`），具備健壯的巢狀中繼資料回退與完整思維等級（`minimal`、`medium`、`high`）。
     *   智慧過濾：自動排除所有縮圖（Thumbnail）與舞台參考素材（Staged Assets），只保留實際生成的內容。
 *   **專屬中繼資料讀取方案（想看提示詞超方便）**：
     *   **拖曳直接開啟視覺化檢視器（免 Node.js 原生秒開）**：內附 [`drag_and_drop_read_metadata.bat`](drag_and_drop_read_metadata.bat)，直接將單張、多張圖片或甚至整個資料夾拖入批次檔，會自動於預設瀏覽器開啟 [`viewer.html`](viewer.html) 並立即載入呈現（採用 Windows 原生 PowerShell，**完全無須安裝 Node.js**）。

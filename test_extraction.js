@@ -9,6 +9,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { readPngMetadata, readJpegMetadata, readImageMetadata } = require('./reader');
 
+const EXTRACTOR_SCRIPT = path.join(__dirname, 'extractor.js');
 const TEST_JSON_PATH = path.join(__dirname, 'dummy_workspace.json');
 const OUTPUT_DIR = path.join(__dirname, 'output');
 const OUTPUT_TXT_DIR = path.join(__dirname, 'output_txt_test');
@@ -132,6 +133,25 @@ const mockWorkspace = {
                         savedFilename: 'banana_gemini_variant.jpg'
                     }
                 ]
+            },
+            {
+                // Item 6: Gemini Nano Banana 2.1 Flagship with nested metadata
+                id: 'item_6_nano_banana_21',
+                prompt: '旗艦奈米香蕉 2.1 測試 🍌🚀',
+                model: 'gemini-nano-banana-2.1',
+                style: 'Cinematic',
+                aspectRatio: '16:9',
+                size: '4K',
+                mode: 'Text to Image',
+                createdAt: Date.now() - 1000,
+                savedFilename: 'banana_nano_21.png',
+                metadata: {
+                    executionMode: 'chat-continuation',
+                    temperature: 1.0,
+                    thinkingLevel: 'medium'
+                },
+                text: '這是 Nano Banana 2.1 生成的影像說明',
+                thoughts: '思考過程：使用 medium 思考等級進行細節推演。'
             }
         ],
         stagedAssets: [
@@ -144,6 +164,10 @@ const mockWorkspace = {
     },
     assets: {
         savedImages: {
+            'banana_nano_21.png': {
+                dataUrl: testPngBase64,
+                savedAt: Date.now() - 1000
+            },
             'banana_yellow.png': {
                 dataUrl: testPngBase64,
                 savedAt: Date.now() - 20000
@@ -195,7 +219,7 @@ try {
 
     // 2. Execute extractor.js (Default Mode: Pure PNG Metadata, No TXT)
     console.log('\n[Test 1] Executing extractor.js CLI (Default Mode: Pure PNGs, No TXT)...');
-    execSync(`node extractor.js "${TEST_JSON_PATH}"`, { stdio: 'inherit' });
+    execSync(`node "${EXTRACTOR_SCRIPT}" "${TEST_JSON_PATH}"`, { stdio: 'inherit', cwd: __dirname });
 
     // 3. Verify output files
     console.log('\nVerifying output files in default mode...');
@@ -209,7 +233,8 @@ try {
         'banana_primary.png',
         'banana_variant-1.png',
         'banana_gemini_raw.jpg',
-        'banana_gemini_variant.jpg'
+        'banana_gemini_variant.jpg',
+        'banana_nano_21.png'
     ];
 
     let testPassed = true;
@@ -292,6 +317,27 @@ try {
         testPassed = false;
     }
 
+    // Verify Gemini Nano Banana 2.1 metadata with nested metadata fallback
+    const nano21PngBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_nano_21.png'));
+    const nano21Meta = readImageMetadata(nano21PngBuf);
+    if (nano21Meta.nano_banana_meta) {
+        const parsed = JSON.parse(nano21Meta.nano_banana_meta);
+        if (
+            parsed.model === 'gemini-nano-banana-2.1' &&
+            parsed.thinkingLevel === 'medium' &&
+            parsed.temperature === 1.0 &&
+            parsed.executionMode === 'chat-continuation'
+        ) {
+            console.log('  ✓ [Nano Banana 2.1 驗證] banana_nano_21.png 成功讀取 2.1 模型與 medium 巢狀中繼資料！');
+        } else {
+            console.error('  ❌ [Nano Banana 2.1 驗證] banana_nano_21.png 巢狀中繼資料回退讀取不符:', parsed);
+            testPassed = false;
+        }
+    } else {
+        console.error('  ❌ [Nano Banana 2.1 驗證] 未找到 nano_banana_meta 區塊！');
+        testPassed = false;
+    }
+
     // Verify embedded JPEG metadata using reader.js
     console.log('\n[Test 2b] Verifying embedded JPEG COM metadata via reader.js...');
     const geminiJpgBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_gemini_raw.jpg'));
@@ -328,7 +374,7 @@ try {
 
     // 5. Test optional --txt flag
     console.log('\n[Test 3] Executing extractor.js with optional --txt flag...');
-    execSync(`node extractor.js "${TEST_JSON_PATH}" -o "${OUTPUT_TXT_DIR}" --txt`, { stdio: 'inherit' });
+    execSync(`node "${EXTRACTOR_SCRIPT}" "${TEST_JSON_PATH}" -o "${OUTPUT_TXT_DIR}" --txt`, { stdio: 'inherit', cwd: __dirname });
     const txtOutputFiles = fs.readdirSync(OUTPUT_TXT_DIR);
     if (txtOutputFiles.includes('banana_yellow.txt') && txtOutputFiles.includes('banana_yellow.png') && txtOutputFiles.includes('banana_gemini_raw.txt')) {
         const txtContent = fs.readFileSync(path.join(OUTPUT_TXT_DIR, 'banana_yellow.txt'), 'utf8');
@@ -348,7 +394,7 @@ try {
     if (fs.existsSync(realFixturePath)) {
         console.log('\n[Test 4] Testing with real Nano Banana Ultra fixture...');
         const REAL_OUTPUT_DIR = path.join(__dirname, 'output_real_test');
-        execSync(`node extractor.js "${realFixturePath}" -o "${REAL_OUTPUT_DIR}"`, { stdio: 'inherit' });
+        execSync(`node "${EXTRACTOR_SCRIPT}" "${realFixturePath}" -o "${REAL_OUTPUT_DIR}"`, { stdio: 'inherit', cwd: __dirname });
         const realFiles = fs.readdirSync(REAL_OUTPUT_DIR);
         console.log('Real fixture output contents:', realFiles);
 
@@ -367,7 +413,7 @@ try {
     if (fs.existsSync(userWorkspacePath)) {
         console.log('\n[Test 5] Testing with user real workspace (283MB with 50 JPEG images)...');
         const USER_OUTPUT_DIR = path.join(__dirname, 'output_user_test');
-        execSync(`node extractor.js "${userWorkspacePath}" -o "${USER_OUTPUT_DIR}"`, { stdio: 'inherit' });
+        execSync(`node "${EXTRACTOR_SCRIPT}" "${userWorkspacePath}" -o "${USER_OUTPUT_DIR}"`, { stdio: 'inherit', cwd: __dirname });
         const userFiles = fs.readdirSync(USER_OUTPUT_DIR);
         console.log(`User workspace output extracted: ${userFiles.length} files`);
         const jpgFiles = userFiles.filter(f => f.toLowerCase().endsWith('.jpg') || f.toLowerCase().endsWith('.jpeg'));
