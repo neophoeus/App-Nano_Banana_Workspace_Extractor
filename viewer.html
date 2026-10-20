@@ -258,6 +258,33 @@
             border: 1px solid var(--border);
         }
 
+        .grounding-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 4px 0;
+        }
+
+        .grounding-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 8px 12px;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            word-break: break-all;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .grounding-link:hover {
+            background-color: #27272a;
+            border-color: var(--accent);
+        }
+
         .hidden {
             display: none !important;
         }
@@ -322,6 +349,14 @@
                     <div class="thoughts-box" id="responseText"></div>
                 </div>
 
+                <!-- Grounding Sources Card -->
+                <div class="card hidden" id="groundingCard">
+                    <div class="card-header">
+                        <span class="card-title">搜尋引用來源 (Grounding Sources)</span>
+                    </div>
+                    <div class="grounding-list" id="groundingList"></div>
+                </div>
+
                 <!-- Thoughts Card -->
                 <div class="card hidden" id="thoughtsCard">
                     <div class="card-header">
@@ -344,12 +379,29 @@
         const metaGrid = document.getElementById('metaGrid');
         const responseCard = document.getElementById('responseCard');
         const responseText = document.getElementById('responseText');
+        const groundingCard = document.getElementById('groundingCard');
+        const groundingList = document.getElementById('groundingList');
         const thoughtsCard = document.getElementById('thoughtsCard');
         const thoughtsText = document.getElementById('thoughtsText');
         const btnCopyPrompt = document.getElementById('btnCopyPrompt');
 
         let loadedImages = [];
         let currentIndex = 0;
+
+        // Revoke active Blob URLs to prevent memory leak
+        function revokeLoadedImageUrls() {
+            if (Array.isArray(loadedImages)) {
+                loadedImages.forEach(item => {
+                    if (item && item.url && typeof item.url === 'string' && item.url.startsWith('blob:')) {
+                        try {
+                            URL.revokeObjectURL(item.url);
+                        } catch {}
+                    }
+                });
+            }
+        }
+
+        window.addEventListener('beforeunload', revokeLoadedImageUrls);
 
         // Auto-load session images if launched via drag_and_drop_read_metadata.bat
         window.addEventListener('DOMContentLoaded', async () => {
@@ -368,6 +420,7 @@
         });
 
         async function loadSessionImages(images) {
+            revokeLoadedImageUrls();
             loadedImages = [];
             for (const item of images) {
                 try {
@@ -421,6 +474,7 @@
                 return;
             }
 
+            revokeLoadedImageUrls();
             loadedImages = [];
             for (const file of imageFiles) {
                 const buffer = await file.arrayBuffer();
@@ -651,8 +705,12 @@
                     { label: '風格 (Style)', value: meta.style },
                     { label: '比例 (Aspect Ratio)', value: meta.aspectRatio },
                     { label: '尺寸 (Size)', value: meta.size },
+                    { label: '輸出格式 (Output Format)', value: meta.outputFormat },
+                    { label: '實際產出格式', value: meta.actualOutput },
                     { label: '生成模式 (Mode)', value: meta.mode },
                     { label: '執行方式 (Execution Mode)', value: meta.executionMode },
+                    { label: '血統操作 (Lineage Action)', value: meta.lineageAction },
+                    { label: '搜尋增強 (Grounding Mode)', value: meta.groundingMode },
                     { label: '溫度 (Temperature)', value: meta.temperature },
                     { label: '思考層級 (Thinking Level)', value: meta.thinkingLevel },
                     { label: '生成時間', value: meta.createdAt ? new Date(meta.createdAt).toLocaleString('zh-TW') : null },
@@ -662,7 +720,14 @@
                     if (f.value !== undefined && f.value !== null && f.value !== '') {
                         const div = document.createElement('div');
                         div.className = 'meta-item';
-                        div.innerHTML = `<div class="meta-label">${f.label}</div><div class="meta-value">${f.value}</div>`;
+                        const labelDiv = document.createElement('div');
+                        labelDiv.className = 'meta-label';
+                        labelDiv.textContent = f.label;
+                        const valueDiv = document.createElement('div');
+                        valueDiv.className = 'meta-value';
+                        valueDiv.textContent = String(f.value);
+                        div.appendChild(labelDiv);
+                        div.appendChild(valueDiv);
                         metaGrid.appendChild(div);
                     }
                 });
@@ -672,6 +737,33 @@
                     responseText.textContent = meta.text.trim();
                 } else {
                     responseCard.classList.add('hidden');
+                }
+
+                if (Array.isArray(meta.groundingSources) && meta.groundingSources.length > 0) {
+                    groundingCard.classList.remove('hidden');
+                    groundingList.innerHTML = '';
+                    meta.groundingSources.forEach(src => {
+                        const url = (src.url || '').trim();
+                        const title = (src.title || url || '未知來源').trim();
+                        const isSafeUrl = /^https?:\/\//i.test(url);
+
+                        if (isSafeUrl) {
+                            const a = document.createElement('a');
+                            a.className = 'grounding-link';
+                            a.href = url;
+                            a.target = '_blank';
+                            a.rel = 'noopener noreferrer';
+                            a.textContent = `🔗 ${title}`;
+                            groundingList.appendChild(a);
+                        } else {
+                            const div = document.createElement('div');
+                            div.className = 'grounding-link';
+                            div.textContent = `📄 ${title}${url ? ' (' + url + ')' : ''}`;
+                            groundingList.appendChild(div);
+                        }
+                    });
+                } else {
+                    groundingCard.classList.add('hidden');
                 }
 
                 if (meta.thoughts && meta.thoughts.trim()) {
@@ -684,14 +776,32 @@
                 promptText.textContent = item.metadata['parameters'];
                 metaGrid.innerHTML = '<div class="meta-item"><div class="meta-label">原始參數</div><div class="meta-value">已讀取到相容 parameters 區塊</div></div>';
                 responseCard.classList.add('hidden');
+                groundingCard.classList.add('hidden');
                 thoughtsCard.classList.add('hidden');
             } else {
                 promptText.textContent = '此圖片中未找到 Nano Banana 或 AI 生成的提示詞中繼資料。';
                 metaGrid.innerHTML = '<div class="meta-item"><div class="meta-label">狀態</div><div class="meta-value">無中繼資料</div></div>';
                 responseCard.classList.add('hidden');
+                groundingCard.classList.add('hidden');
                 thoughtsCard.classList.add('hidden');
             }
         }
+
+        // Keyboard navigation (ArrowLeft / ArrowRight)
+        window.addEventListener('keydown', (e) => {
+            if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+            if (!Array.isArray(loadedImages) || loadedImages.length <= 1) return;
+
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                currentIndex = (currentIndex - 1 + loadedImages.length) % loadedImages.length;
+                renderCurrent();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                currentIndex = (currentIndex + 1) % loadedImages.length;
+                renderCurrent();
+            }
+        });
 
         function copyPrompt() {
             const text = promptText.textContent;

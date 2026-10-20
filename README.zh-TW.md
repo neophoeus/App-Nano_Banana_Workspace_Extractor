@@ -1,4 +1,4 @@
-# Nano Banana 工作區檔案提取與中繼資料工具 `v1.1.2`
+# Nano Banana 工作區檔案提取與中繼資料工具 `v1.2.0`
 
 [English](README.md) | 繁體中文 | [更新日誌 (Changelog)](CHANGELOG.md)
 
@@ -10,19 +10,20 @@
 
 *   **純淨圖片匯出與無損中繼資料內嵌（極致無雜訊）**：
     *   **PNG 格式**：直接將提示詞與生成參數完整內嵌至 PNG 圖片的 `iTXt` 區塊。
-    *   **JPEG 格式**：支援 Google Gemini 模型產出之原生 JPEG (`.jpg`)，直接將結構化資料與標準參數注入標準 COM (`0xFF 0xFE`) 註解區塊，**不重新編碼或壓縮像素，100% 保持原圖無損畫質**。
+    *   **JPEG 格式**：支援 Google Gemini 模型產出之原生 JPEG (`.jpg`)，直接將結構化資料與標準參數注入標準 COM (`0xFF 0xFE`) 註解區塊，具備 >64KB 漸進安全裁剪與 APP0/APP1 標記邊界防護，**不重新編碼或壓縮像素，100% 保持原圖無損畫質**。
     *   輸出目錄只保留清晰純粹的 `.png` 與 `.jpg` 圖片，**不再產生大量雜亂的 `.txt` 檔案**。
-*   **與 Nano Banana Ultra (v4.9.0+) 100% 相容**：
+*   **與 Nano Banana Ultra (v4.9.0–v4.11.0+) 100% 相容**：
     *   完整擷取成品圖、變體圖（Variant）與思考過程圖（Thought Image），全面相容 PNG 與 Gemini 原生 JPEG 輸出。
-    *   支援所有現行活躍的 Gemini 影像模型（`gemini-nano-banana-2.1`、`gemini-3.1-flash-image`、`gemini-3.1-flash-lite-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`），具備健壯的巢狀中繼資料回退與完整思維等級（`minimal`、`medium`、`high`）。
-    *   智慧過濾：自動排除所有縮圖（Thumbnail）與舞台參考素材（Staged Assets），只保留實際生成的內容。
+    *   支援所有現行活躍的 Gemini 影像模型（`gemini-nano-banana-2.1`、`gemini-3.1-flash-image`、`gemini-3.1-flash-lite-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`），具備健壯的巢狀中繼資料回退、搜尋引用來源（Grounding Sources）、`images-only` / `images-and-text` 輸出模式與完整思維等級（`minimal`、`medium`、`high`）。
+    *   智慧過濾與同名去重：自動排除所有縮圖（Thumbnail）與舞台參考素材（Staged Assets），只保留實際生成的內容，並具備同工作區檔名去重機制防止重複寫入。
 *   **專屬中繼資料讀取方案（想看提示詞超方便）**：
     *   **拖曳直接開啟視覺化檢視器（免 Node.js 原生秒開）**：內附 [`drag_and_drop_read_metadata.bat`](drag_and_drop_read_metadata.bat)，直接將單張、多張圖片或甚至整個資料夾拖入批次檔，會自動於預設瀏覽器開啟 [`viewer.html`](viewer.html) 並立即載入呈現（採用 Windows 原生 PowerShell，**完全無須安裝 Node.js**）。
-    *   **離線網頁視覺化檢視器**：內附 [`viewer.html`](viewer.html)，雙擊用瀏覽器開啟即可拖入圖片，左側看圖、右側對照參數，並支援**一鍵複製提示詞**！
+    *   **離線網頁視覺化檢視器**：內附 [`viewer.html`](viewer.html)，雙擊用瀏覽器開啟即可拖入圖片，左側看圖、右側對照參數，支援鍵盤方向鍵 (`←`/`→`) 切換圖片、DOM XSS 安全防護、Blob 記憶體自動釋放與**一鍵複製提示詞**！
     *   **業界相容性**：內嵌參數採用標準 `parameters` 關鍵字，相容 WebUI / ComfyUI / Civitai 等 AI 圖片檢視工具。
-*   **零依賴 (Zero Dependencies)**：
+*   **零依賴 (Zero Dependencies) 與完整測試隔離**：
     *   純原生 Node.js API 實作（含純原生 CRC-32 與 PNG/JPEG 標頭注入），免去複雜的 `npm install`。
     *   配備自訂高效串流 Buffer 解析器，支援數 GB 大型工作區快照而不受 V8 記憶體長度限制。
+    *   整合測試全面使用系統暫存目錄（`os.tmpdir()`），保證 100% 不會誤刪或污染您的真實匯出資料夾。
 
 ---
 
@@ -42,7 +43,7 @@ node extractor.js <workspace_file.json>
 # 支援一次傳入多個工作區檔案，並自訂輸出目錄
 node extractor.js workspace1.json workspace2.json -o D:\MyImages
 
-# 若仍希望額外輸出傳統 .txt 提示詞檔，可加上 --txt
+# 若仍希望額外輸出傳統 .txt 提示詞檔，可加上 --txt（包含完整參數、引用來源與解析度）
 node extractor.js workspace.json --txt
 ```
 
@@ -56,7 +57,7 @@ node extractor.js workspace.json --txt
 #### 方式 B：使用離線網頁檢視器 [viewer.html](viewer.html)
 1. 雙擊打開本機的 `viewer.html`（任何瀏覽器皆可，100% 離線運行）。
 2. 將一張或多張 `.png` 或 `.jpg` / `.jpeg` 圖片拖入網頁中。
-3. 即可享受高品質大圖預覽、底片切換條、結構化參數清單與**一鍵複製提示詞**功能！
+3. 即可享受高品質大圖預覽、底片切換條（支援鍵盤 `←` / `→` 鍵快速切換）、結構化參數清單與**一鍵複製提示詞**功能！
 
 #### 方式 C：CLI 指令
 ```bash

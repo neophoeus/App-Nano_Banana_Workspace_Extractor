@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.2.0 - 2026-10-20
+
+- Release title: Nano Banana Workspace Extractor 1.2.0 - Robust JPEG COM Boundary Defense, Test Isolation & Ultra v4.11.0 Grounding Suite
+- Release summary:
+    - **Safe Test Isolation (`test_extraction.js`)**: Fixed a critical test defect where running integration tests recursively deleted the user's real `./output` extraction folder. All test inputs, intermediate snapshots, and generated images are now safely isolated in dedicated system temporary directories (`os.tmpdir()`), completely protecting user output assets.
+    - **Robust JPEG COM 64KB Truncation Defense (`extractor.js`)**: Resolved JSON corruption caused by hard-slicing payloads exceeding 65,533 bytes. Introduced `truncateUtf8BufferSafely` to prevent slicing mid-character on multi-byte UTF-8 boundaries, and `serializeMetaForJpegCom` with byte-budget calculations to progressively and safely trim `thoughts` and `text` while guaranteeing 100% valid, parseable JSON for all JPEG COM segments without over-trimming Traditional Chinese and emoji content.
+    - **APP0 / APP1 Marker Sequence Defense (`extractor.js`)**: Hardened JPEG metadata injection with strict bounds checking for leading `APP0` (`0xFFE0`) and `APP1` (`0xFFE1`, Exif) markers, preventing corrupt segment placement or out-of-bounds buffer reads.
+    - **Nano Banana Ultra v4.11.0 Metadata Alignment (`extractor.js`, `reader.js`, `viewer.html`)**: Added end-to-end support for modern metadata fields introduced in Ultra v4.9.1–v4.11.0: `groundingSources`, `groundingMode`, `outputFormat`, `actualOutput`, `lineageAction`, and fallback `size`. Correctly omitted temperature for `gemini-nano-banana-2.1` in compliance with official Gemini specifications (`supportsTemperature: false`).
+    - **Structured Actual Output & Dimension Normalization (`extractor.js`)**: Automatically normalizes Ultra's structured `{ width, height, mimeType }` object into human-readable resolution strings (e.g. `2048x2048 (image/png)`), completely eliminating `[object Object]` formatting across console logs, sidecar files, and the web viewer.
+    - **Duplicate Filename Guard (`extractor.js`)**: Integrated an in-memory export set (`exportedFilenames`) to ensure each generated file is processed only once, preventing duplicate disk writes and skewed extraction statistics across complex session histories and `resultParts`.
+    - **Web Viewer DOM XSS Hardening & Safe Grounding Links (`viewer.html`)**: Refactored metadata item rendering to use strict DOM manipulation (`createElement` + `textContent`), eliminating inline HTML string interpolation vulnerabilities. Added an interactive Grounding Sources card that safely opens external URLs (`http://`, `https://`) in new tabs with `rel="noopener noreferrer"`.
+    - **Blob Object URL Memory Management (`viewer.html`)**: Implemented `revokeLoadedImageUrls` to automatically release Blob Object URLs upon reloading images or page unmount, preventing memory accumulation when inspecting large batches of high-resolution images.
+    - **Filmstrip Keyboard Navigation (`viewer.html`)**: Added keyboard shortcuts (`ArrowLeft` / `ArrowRight`) to conveniently cycle through images in the viewer filmstrip.
+
 ## v1.1.2 - 2026-10-12
 
 - Release title: Nano Banana Workspace Extractor 1.1.2 - Nested Metadata Fallback Resilience & Gemini Nano Banana 2.1 Compatibility Verification

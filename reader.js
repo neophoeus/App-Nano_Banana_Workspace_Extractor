@@ -248,8 +248,12 @@ function inspectImageFile(imagePath) {
         if (parsedMeta.style) console.log(`  風格 (Style)            : ${parsedMeta.style}`);
         if (parsedMeta.aspectRatio) console.log(`  比例 (Aspect Ratio)     : ${parsedMeta.aspectRatio}`);
         if (parsedMeta.size) console.log(`  尺寸 (Size)             : ${parsedMeta.size}`);
+        if (parsedMeta.outputFormat) console.log(`  輸出格式 (Output Format): ${parsedMeta.outputFormat}`);
+        if (parsedMeta.actualOutput) console.log(`  實際產出格式            : ${parsedMeta.actualOutput}`);
         if (parsedMeta.mode) console.log(`  生成模式 (Mode)         : ${parsedMeta.mode}`);
         if (parsedMeta.executionMode) console.log(`  執行方式 (Execution Mode): ${parsedMeta.executionMode}`);
+        if (parsedMeta.lineageAction) console.log(`  血統操作 (Lineage Action): ${parsedMeta.lineageAction}`);
+        if (parsedMeta.groundingMode) console.log(`  搜尋增強 (Grounding Mode): ${parsedMeta.groundingMode}`);
         if (parsedMeta.temperature !== undefined) console.log(`  溫度 (Temperature)      : ${parsedMeta.temperature}`);
         if (parsedMeta.thinkingLevel) console.log(`  思考層級 (Thinking Level): ${parsedMeta.thinkingLevel}`);
         if (parsedMeta.createdAt) {

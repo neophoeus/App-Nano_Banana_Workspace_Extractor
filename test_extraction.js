@@ -6,24 +6,29 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 const { readPngMetadata, readJpegMetadata, readImageMetadata } = require('./reader');
+const {
+    truncateUtf8BufferSafely,
+    serializeMetaForJpegCom,
+    embedJpegMetadata
+} = require('./extractor');
 
 const EXTRACTOR_SCRIPT = path.join(__dirname, 'extractor.js');
-const TEST_JSON_PATH = path.join(__dirname, 'dummy_workspace.json');
-const OUTPUT_DIR = path.join(__dirname, 'output');
-const OUTPUT_TXT_DIR = path.join(__dirname, 'output_txt_test');
+const TEST_TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'nbu-extractor-test-'));
+const TEST_JSON_PATH = path.join(TEST_TMP_DIR, 'dummy_workspace.json');
+const OUTPUT_DIR = path.join(TEST_TMP_DIR, 'output');
+const OUTPUT_TXT_DIR = path.join(TEST_TMP_DIR, 'output_txt_test');
 
 // Clean up previous runs
 function cleanup() {
-    if (fs.existsSync(TEST_JSON_PATH)) {
-        fs.unlinkSync(TEST_JSON_PATH);
-    }
-    if (fs.existsSync(OUTPUT_DIR)) {
-        fs.rmSync(OUTPUT_DIR, { recursive: true, force: true });
-    }
-    if (fs.existsSync(OUTPUT_TXT_DIR)) {
-        fs.rmSync(OUTPUT_TXT_DIR, { recursive: true, force: true });
+    try {
+        if (fs.existsSync(TEST_TMP_DIR)) {
+            fs.rmSync(TEST_TMP_DIR, { recursive: true, force: true });
+        }
+    } catch (e) {
+        // Ignore cleanup errors on exit
     }
 }
 
@@ -152,6 +157,30 @@ const mockWorkspace = {
                 },
                 text: '這是 Nano Banana 2.1 生成的影像說明',
                 thoughts: '思考過程：使用 medium 思考等級進行細節推演。'
+            },
+            {
+                // Item 7: Ultra v4.11.0 modern metadata (grounding, outputFormat, lineageAction)
+                id: 'item_7_ultra_modern',
+                prompt: '探索未來城市 🏙️',
+                model: 'gemini-3.1-flash-image',
+                style: 'Cyberpunk',
+                aspectRatio: '16:9',
+                size: '2K',
+                outputFormat: 'images-only',
+                actualOutput: { width: 2048, height: 2048, mimeType: 'image/png' },
+                mode: 'Text to Image',
+                executionMode: 'single-turn',
+                lineageAction: 'generate-initial',
+                groundingMode: 'search',
+                groundingSources: [
+                    { title: 'Google Maps Tech', url: 'https://example.com/maps' }
+                ],
+                temperature: 0.8,
+                thinkingLevel: 'normal',
+                createdAt: Date.now() - 500,
+                savedFilename: 'banana_future_city.png',
+                text: '這是一張融合搜尋增強與現代規格的城市生成圖',
+                thoughts: '思考過程：檢索資料並渲染賽博龐克風格。'
             }
         ],
         stagedAssets: [
@@ -167,6 +196,10 @@ const mockWorkspace = {
             'banana_nano_21.png': {
                 dataUrl: testPngBase64,
                 savedAt: Date.now() - 1000
+            },
+            'banana_future_city.png': {
+                dataUrl: testPngBase64,
+                savedAt: Date.now() - 500
             },
             'banana_yellow.png': {
                 dataUrl: testPngBase64,
@@ -211,15 +244,13 @@ const mockWorkspace = {
 console.log('--- Extractor & Metadata Reader Integration Test ---');
 
 try {
-    cleanup();
-
     // 1. Create dummy workspace JSON
-    console.log('Generating dummy workspace JSON...');
+    console.log('Generating dummy workspace JSON in temp dir...');
     fs.writeFileSync(TEST_JSON_PATH, JSON.stringify(mockWorkspace, null, 2), 'utf8');
 
     // 2. Execute extractor.js (Default Mode: Pure PNG Metadata, No TXT)
     console.log('\n[Test 1] Executing extractor.js CLI (Default Mode: Pure PNGs, No TXT)...');
-    execSync(`node "${EXTRACTOR_SCRIPT}" "${TEST_JSON_PATH}"`, { stdio: 'inherit', cwd: __dirname });
+    execSync(`node "${EXTRACTOR_SCRIPT}" "${TEST_JSON_PATH}" -o "${OUTPUT_DIR}"`, { stdio: 'inherit', cwd: __dirname });
 
     // 3. Verify output files
     console.log('\nVerifying output files in default mode...');
@@ -234,7 +265,8 @@ try {
         'banana_variant-1.png',
         'banana_gemini_raw.jpg',
         'banana_gemini_variant.jpg',
-        'banana_nano_21.png'
+        'banana_nano_21.png',
+        'banana_future_city.png'
     ];
 
     let testPassed = true;
@@ -317,7 +349,7 @@ try {
         testPassed = false;
     }
 
-    // Verify Gemini Nano Banana 2.1 metadata with nested metadata fallback
+    // Verify Gemini Nano Banana 2.1 metadata (official: supportsTemperature: false -> temperature omitted)
     const nano21PngBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_nano_21.png'));
     const nano21Meta = readImageMetadata(nano21PngBuf);
     if (nano21Meta.nano_banana_meta) {
@@ -325,16 +357,41 @@ try {
         if (
             parsed.model === 'gemini-nano-banana-2.1' &&
             parsed.thinkingLevel === 'medium' &&
-            parsed.temperature === 1.0 &&
+            parsed.temperature === undefined &&
             parsed.executionMode === 'chat-continuation'
         ) {
-            console.log('  ✓ [Nano Banana 2.1 驗證] banana_nano_21.png 成功讀取 2.1 模型與 medium 巢狀中繼資料！');
+            console.log('  ✓ [Nano Banana 2.1 驗證] banana_nano_21.png 成功讀取 2.1 模型、排除溫度欄位並回退巢狀中繼資料！');
         } else {
-            console.error('  ❌ [Nano Banana 2.1 驗證] banana_nano_21.png 巢狀中繼資料回退讀取不符:', parsed);
+            console.error('  ❌ [Nano Banana 2.1 驗證] banana_nano_21.png 欄位不符:', parsed);
             testPassed = false;
         }
     } else {
         console.error('  ❌ [Nano Banana 2.1 驗證] 未找到 nano_banana_meta 區塊！');
+        testPassed = false;
+    }
+
+    // Verify Ultra modern fields (Item 7: grounding, outputFormat, lineageAction)
+    const modernPngBuf = fs.readFileSync(path.join(OUTPUT_DIR, 'banana_future_city.png'));
+    const modernMeta = readImageMetadata(modernPngBuf);
+    if (modernMeta.nano_banana_meta) {
+        const parsed = JSON.parse(modernMeta.nano_banana_meta);
+        if (
+            parsed.outputFormat === 'images-only' &&
+            parsed.actualOutput === '2048x2048 (image/png)' &&
+            parsed.lineageAction === 'generate-initial' &&
+            parsed.groundingMode === 'search' &&
+            Array.isArray(parsed.groundingSources) &&
+            parsed.groundingSources.length === 1 &&
+            parsed.groundingSources[0].url === 'https://example.com/maps' &&
+            parsed.temperature === 0.8
+        ) {
+            console.log('  ✓ [Ultra 現代欄位驗證] banana_future_city.png 成功讀取 outputFormat, lineageAction, groundingSources 等欄位！');
+        } else {
+            console.error('  ❌ [Ultra 現代欄位驗證] banana_future_city.png 欄位不符:', parsed);
+            testPassed = false;
+        }
+    } else {
+        console.error('  ❌ [Ultra 現代欄位驗證] 未找到 nano_banana_meta 區塊！');
         testPassed = false;
     }
 
@@ -372,6 +429,64 @@ try {
         testPassed = false;
     }
 
+    // [Test 2c] Unit tests for UTF-8 Buffer boundary safety
+    console.log('\n[Test 2c] Unit testing truncateUtf8BufferSafely...');
+    const utf8Buf = Buffer.from('香蕉船🍌', 'utf8'); // 香(3) 蕉(3) 船(3) 🍌(4) = 13 bytes
+    const trunc2 = truncateUtf8BufferSafely(utf8Buf, 2);
+    if (trunc2.length === 0) {
+        console.log('  ✓ [UTF-8 截斷邊界] 2 bytes 截斷未切斷 3-byte 字元，安全退回長度 0！');
+    } else {
+        console.error('  ❌ [UTF-8 截斷邊界] 2 bytes 截斷失敗，長度:', trunc2.length);
+        testPassed = false;
+    }
+    const trunc5 = truncateUtf8BufferSafely(utf8Buf, 5); // should be 3 bytes ('香')
+    if (trunc5.toString('utf8') === '香') {
+        console.log('  ✓ [UTF-8 截斷邊界] 5 bytes 截斷正確保留完整 "香"！');
+    } else {
+        console.error('  ❌ [UTF-8 截斷邊界] 5 bytes 截斷結果不符:', trunc5.toString('utf8'));
+        testPassed = false;
+    }
+
+    // [Test 2d] Unit testing JPEG COM >64KB boundary safety & progressive trimming
+    console.log('\n[Test 2d] Unit testing JPEG COM >64KB serialization & embedding...');
+    const hugeMeta = {
+        prompt: '超長思考鏈測試 🍌',
+        model: 'gemini-3.1-flash-image',
+        aspectRatio: '1:1',
+        size: '2K',
+        text: '一般長度說明',
+        thoughts: '思考推演🍌'.repeat(12000) // ~192KB of multi-byte UTF-8 thoughts, exceeds 64KB limit
+    };
+    const serializedJson = serializeMetaForJpegCom(hugeMeta, 65510);
+    const parsedHuge = JSON.parse(serializedJson);
+    if (
+        Buffer.byteLength(serializedJson, 'utf8') <= 65510 &&
+        parsedHuge.prompt === '超長思考鏈測試 🍌' &&
+        parsedHuge.thoughts.startsWith('思考推演🍌') &&
+        parsedHuge.thoughts.includes('[truncated]')
+    ) {
+        console.log('  ✓ [JPEG COM >64KB 序列化] 80KB 思考鏈成功在 JSON 結構完整下漸進裁剪並通過邊界！');
+    } else {
+        console.error('  ❌ [JPEG COM >64KB 序列化] 序列化邊界失敗！');
+        testPassed = false;
+    }
+
+    const testJpgRawBuf = Buffer.from(testJpgBase64.replace(/^data:image\/jpeg;base64,/, ''), 'base64');
+    const embeddedHugeJpg = embedJpegMetadata(testJpgRawBuf, hugeMeta);
+    const readHugeMeta = readImageMetadata(embeddedHugeJpg);
+    if (readHugeMeta.nano_banana_meta) {
+        const readParsed = JSON.parse(readHugeMeta.nano_banana_meta);
+        if (readParsed.prompt === '超長思考鏈測試 🍌') {
+            console.log('  ✓ [JPEG COM >64KB 嵌入讀取] 超長中繼資料寫入後成功以 reader.js 讀取還原！');
+        } else {
+            console.error('  ❌ [JPEG COM >64KB 嵌入讀取] 讀取結果不符:', readParsed);
+            testPassed = false;
+        }
+    } else {
+        console.error('  ❌ [JPEG COM >64KB 嵌入讀取] reader.js 未解析出 nano_banana_meta！');
+        testPassed = false;
+    }
+
     // 5. Test optional --txt flag
     console.log('\n[Test 3] Executing extractor.js with optional --txt flag...');
     execSync(`node "${EXTRACTOR_SCRIPT}" "${TEST_JSON_PATH}" -o "${OUTPUT_TXT_DIR}" --txt`, { stdio: 'inherit', cwd: __dirname });
@@ -393,7 +508,7 @@ try {
     const realFixturePath = 'd:\\Playground\\Labs\\App-Nano_Banana_Ultra\\e2e\\fixtures\\restore\\ui-import-lite-embedded-workspace.json';
     if (fs.existsSync(realFixturePath)) {
         console.log('\n[Test 4] Testing with real Nano Banana Ultra fixture...');
-        const REAL_OUTPUT_DIR = path.join(__dirname, 'output_real_test');
+        const REAL_OUTPUT_DIR = path.join(TEST_TMP_DIR, 'output_real_test');
         execSync(`node "${EXTRACTOR_SCRIPT}" "${realFixturePath}" -o "${REAL_OUTPUT_DIR}"`, { stdio: 'inherit', cwd: __dirname });
         const realFiles = fs.readdirSync(REAL_OUTPUT_DIR);
         console.log('Real fixture output contents:', realFiles);
@@ -405,14 +520,13 @@ try {
             console.error('  ❌ [真實工作區測試] 縮圖或舞台素材遭到外洩:', realFiles);
             testPassed = false;
         }
-        fs.rmSync(REAL_OUTPUT_DIR, { recursive: true, force: true });
     }
 
     // 7. Test with user's real 283MB Gemini snapshot (if present on machine)
     const userWorkspacePath = 'D:\\Downloads\\nano-banana-workspace-2026-09-23T02-20-32.json';
     if (fs.existsSync(userWorkspacePath)) {
         console.log('\n[Test 5] Testing with user real workspace (283MB with 50 JPEG images)...');
-        const USER_OUTPUT_DIR = path.join(__dirname, 'output_user_test');
+        const USER_OUTPUT_DIR = path.join(TEST_TMP_DIR, 'output_user_test');
         execSync(`node "${EXTRACTOR_SCRIPT}" "${userWorkspacePath}" -o "${USER_OUTPUT_DIR}"`, { stdio: 'inherit', cwd: __dirname });
         const userFiles = fs.readdirSync(USER_OUTPUT_DIR);
         console.log(`User workspace output extracted: ${userFiles.length} files`);
@@ -438,7 +552,6 @@ try {
             console.error('  ❌ [真實 JPEG 提取] 未提取出任何 .jpg 檔案！');
             testPassed = false;
         }
-        fs.rmSync(USER_OUTPUT_DIR, { recursive: true, force: true });
     }
 
     if (testPassed) {

@@ -90,13 +90,23 @@ function formatParametersText(meta) {
     if (meta.style) details.push(`Style: ${meta.style}`);
     if (meta.aspectRatio) details.push(`Aspect Ratio: ${meta.aspectRatio}`);
     if (meta.size) details.push(`Size: ${meta.size}`);
+    if (meta.outputFormat) details.push(`Output Format: ${meta.outputFormat}`);
+    if (meta.actualOutput) details.push(`Actual Output: ${meta.actualOutput}`);
     if (meta.mode) details.push(`Mode: ${meta.mode}`);
     if (meta.executionMode) details.push(`Execution Mode: ${meta.executionMode}`);
+    if (meta.lineageAction) details.push(`Lineage Action: ${meta.lineageAction}`);
+    if (meta.groundingMode) details.push(`Grounding Mode: ${meta.groundingMode}`);
     if (meta.temperature !== undefined) details.push(`Temperature: ${meta.temperature}`);
     if (meta.thinkingLevel) details.push(`Thinking Level: ${meta.thinkingLevel}`);
     if (meta.createdAt) details.push(`Created At: ${new Date(meta.createdAt).toISOString()}`);
     if (details.length > 0) {
         text += details.join(', ') + '\n';
+    }
+    if (Array.isArray(meta.groundingSources) && meta.groundingSources.length > 0) {
+        text += `\n[Grounding Sources]:\n`;
+        meta.groundingSources.forEach((src, idx) => {
+            text += `[${idx + 1}] ${src.title || ''} (${src.url || ''})\n`;
+        });
     }
     if (meta.thoughts && meta.thoughts.trim()) {
         text += `\n[Thoughts]:\n${meta.thoughts.trim()}\n`;
@@ -145,22 +155,115 @@ function embedPngMetadata(pngBuffer, meta) {
 }
 
 /**
+ * Safely truncate a UTF-8 Buffer without cutting mid-character.
+ * @param {Buffer} buf
+ * @param {number} maxBytes
+ * @returns {Buffer}
+ */
+function truncateUtf8BufferSafely(buf, maxBytes) {
+    if (!buf || buf.length <= maxBytes) return buf;
+    let end = maxBytes;
+    // Walk back if we landed on a UTF-8 continuation byte (0b10xxxxxx)
+    while (end > 0 && (buf[end] & 0xC0) === 0x80) {
+        end--;
+    }
+    // Check if the preceding lead byte expects more bytes than remain in slice
+    if (end > 0) {
+        const lead = buf[end - 1];
+        let charLen = 1;
+        if ((lead & 0xE0) === 0xC0) charLen = 2;
+        else if ((lead & 0xF0) === 0xE0) charLen = 3;
+        else if ((lead & 0xF8) === 0xF0) charLen = 4;
+        if (charLen > 1 && (end - 1 + charLen) > maxBytes) {
+            end = end - 1;
+        }
+    }
+    return buf.subarray(0, end);
+}
+
+/**
+ * Serialize metadata object to JSON string while ensuring it safely fits
+ * within a single JPEG COM segment without cutting the JSON structure.
+ * Progressively trims thoughts and response text if payload exceeds maxJsonBytes.
+ * @param {object} meta
+ * @param {number} maxJsonBytes
+ * @returns {string}
+ */
+function serializeMetaForJpegCom(meta, maxJsonBytes = 65510) {
+    let jsonStr = JSON.stringify(meta);
+    let buf = Buffer.from(jsonStr, 'utf8');
+    if (buf.length <= maxJsonBytes) return jsonStr;
+
+    // Shallow clone to avoid mutating caller's object
+    const trimmed = { ...meta };
+
+    // 1. Progressively trim thoughts by UTF-8 byte budget
+    if (trimmed.thoughts && typeof trimmed.thoughts === 'string') {
+        const thoughtBuf = Buffer.from(trimmed.thoughts, 'utf8');
+        const targetBytes = Math.max(0, thoughtBuf.length - (buf.length - maxJsonBytes) - 64);
+        trimmed.thoughts = (targetBytes > 0 ? truncateUtf8BufferSafely(thoughtBuf, targetBytes).toString('utf8') : '') + '... [truncated]';
+        jsonStr = JSON.stringify(trimmed);
+        buf = Buffer.from(jsonStr, 'utf8');
+        if (buf.length > maxJsonBytes) {
+            const thoughtBuf2 = Buffer.from(trimmed.thoughts, 'utf8');
+            const targetBytes2 = Math.max(0, thoughtBuf2.length - (buf.length - maxJsonBytes) - 128);
+            trimmed.thoughts = (targetBytes2 > 0 ? truncateUtf8BufferSafely(thoughtBuf2, targetBytes2).toString('utf8') : '') + '... [truncated]';
+            jsonStr = JSON.stringify(trimmed);
+            buf = Buffer.from(jsonStr, 'utf8');
+        }
+        if (buf.length <= maxJsonBytes) return jsonStr;
+    }
+
+    // 2. If still too big, trim text response by UTF-8 byte budget
+    if (trimmed.text && typeof trimmed.text === 'string') {
+        const textBuf = Buffer.from(trimmed.text, 'utf8');
+        const targetBytes = Math.max(0, textBuf.length - (buf.length - maxJsonBytes) - 64);
+        trimmed.text = (targetBytes > 0 ? truncateUtf8BufferSafely(textBuf, targetBytes).toString('utf8') : '') + '... [truncated]';
+        jsonStr = JSON.stringify(trimmed);
+        buf = Buffer.from(jsonStr, 'utf8');
+        if (buf.length <= maxJsonBytes) return jsonStr;
+    }
+
+    // 3. Fallback: drop thoughts and text completely if payload is still too large
+    delete trimmed.thoughts;
+    delete trimmed.text;
+    jsonStr = JSON.stringify(trimmed);
+    buf = Buffer.from(jsonStr, 'utf8');
+    if (buf.length <= maxJsonBytes) return jsonStr;
+
+    // 4. Ultimate fallback: minimal required metadata
+    const minimal = {
+        prompt: (trimmed.prompt || '').slice(0, 500),
+        model: trimmed.model,
+        aspectRatio: trimmed.aspectRatio,
+        size: trimmed.size
+    };
+    return JSON.stringify(minimal);
+}
+
+/**
  * Create a standard JPEG COM (Comment, marker 0xFF 0xFE) segment.
  * @param {string} prefix - Identification prefix (e.g. 'parameters' or 'nano_banana_meta')
  * @param {string} text - UTF-8 text payload
  * @returns {Buffer}
  */
 function createJpegComSegment(prefix, text) {
-    const payload = Buffer.from(prefix + '\n' + text, 'utf8');
+    const prefixBuf = Buffer.from(prefix + '\n', 'utf8');
     const maxDataLen = 65533; // 65535 - 2 bytes length field
-    const slice = payload.length > maxDataLen ? payload.subarray(0, maxDataLen) : payload;
-    const segLen = slice.length + 2;
+    const maxPayloadLen = maxDataLen - prefixBuf.length;
 
-    const segBuf = Buffer.alloc(4 + slice.length);
+    let payloadBuf = Buffer.from(text, 'utf8');
+    if (payloadBuf.length > maxPayloadLen) {
+        payloadBuf = truncateUtf8BufferSafely(payloadBuf, maxPayloadLen);
+    }
+    const combinedData = Buffer.concat([prefixBuf, payloadBuf]);
+    const segLen = combinedData.length + 2;
+
+    const segBuf = Buffer.alloc(4 + combinedData.length);
     segBuf[0] = 0xFF;
     segBuf[1] = 0xFE; // COM marker
     segBuf.writeUInt16BE(segLen, 2);
-    slice.copy(segBuf, 4);
+    combinedData.copy(segBuf, 4);
     return segBuf;
 }
 
@@ -175,17 +278,24 @@ function embedJpegMetadata(jpegBuffer, meta) {
     if (jpegBuffer[0] !== 0xFF || jpegBuffer[1] !== 0xD8) return jpegBuffer; // Not a JPEG
 
     const paramsText = formatParametersText(meta);
-    const jsonText = JSON.stringify(meta);
+    const jsonText = serializeMetaForJpegCom(meta, 65510);
 
     const comParams = createJpegComSegment('parameters', paramsText);
     const comJson = createJpegComSegment('nano_banana_meta', jsonText);
     const combined = Buffer.concat([comParams, comJson]);
 
-    // Insert after APP0 (JFIF) if present, otherwise immediately after SOI (0xFF 0xD8)
+    // Insert after APP0 (0xFFE0) or APP1 (0xFFE1) if present at start, otherwise immediately after SOI (0xFF 0xD8)
     let insertPos = 2;
-    if (jpegBuffer[2] === 0xFF && jpegBuffer[3] === 0xE0) {
-        const app0Len = jpegBuffer.readUInt16BE(4);
-        insertPos = 4 + app0Len;
+    while (insertPos + 4 <= jpegBuffer.length && jpegBuffer[insertPos] === 0xFF) {
+        const marker = jpegBuffer[insertPos + 1];
+        if (marker === 0xE0 || marker === 0xE1) { // APP0 (JFIF) or APP1 (Exif)
+            const appLen = jpegBuffer.readUInt16BE(insertPos + 2);
+            if (insertPos + 2 + appLen <= jpegBuffer.length) {
+                insertPos += 2 + appLen;
+                continue;
+            }
+        }
+        break;
     }
 
     return Buffer.concat([
@@ -429,9 +539,14 @@ function extractWorkspaceFile(jsonPath, outputDir, options = {}) {
 
     let extractedImagesCount = 0;
     let extractedTextsCount = 0;
+    const exportedFilenames = new Set();
 
     // Helper to decode, embed metadata, and save an image
     function saveImage(filename, meta) {
+        const safeFilename = path.basename(filename);
+        if (exportedFilenames.has(safeFilename)) {
+            return false;
+        }
         const imageRecord = savedImages[filename];
         if (!imageRecord || !imageRecord.dataUrl) {
             return false;
@@ -469,10 +584,10 @@ function extractWorkspaceFile(jsonPath, outputDir, options = {}) {
         }
 
         // Path traversal sanitization
-        const safeFilename = path.basename(filename);
         const targetPath = path.join(outputDir, safeFilename);
 
         fs.writeFileSync(targetPath, imageBuffer);
+        exportedFilenames.add(safeFilename);
         extractedImagesCount++;
         return true;
     }
@@ -495,11 +610,24 @@ function extractWorkspaceFile(jsonPath, outputDir, options = {}) {
         txtContent += `風格 (Style): ${meta.style || ''}\n`;
         txtContent += `比例 (Aspect Ratio): ${meta.aspectRatio || ''}\n`;
         txtContent += `尺寸 (Size): ${meta.size || ''}\n`;
+        if (meta.outputFormat) txtContent += `輸出格式 (Output Format): ${meta.outputFormat}\n`;
+        if (meta.actualOutput) txtContent += `實際產出格式: ${meta.actualOutput}\n`;
         if (meta.mode) txtContent += `生成模式 (Mode): ${meta.mode}\n`;
         if (meta.executionMode) txtContent += `執行方式 (Execution Mode): ${meta.executionMode}\n`;
+        if (meta.lineageAction) txtContent += `血統操作 (Lineage Action): ${meta.lineageAction}\n`;
+        if (meta.groundingMode) txtContent += `搜尋增強 (Grounding Mode): ${meta.groundingMode}\n`;
         if (meta.temperature !== undefined) txtContent += `溫度 (Temperature): ${meta.temperature}\n`;
         if (meta.thinkingLevel) txtContent += `思考層級 (Thinking Level): ${meta.thinkingLevel}\n`;
         txtContent += `生成時間: ${createdAtStr}\n`;
+
+        if (Array.isArray(meta.groundingSources) && meta.groundingSources.length > 0) {
+            txtContent += `\n==================================================\n`;
+            txtContent += `  搜尋引用來源 (Grounding Sources)\n`;
+            txtContent += `==================================================\n`;
+            meta.groundingSources.forEach((src, idx) => {
+                txtContent += `  [${idx + 1}] ${src.title || ''} (${src.url || ''})\n`;
+            });
+        }
         
         if (meta.text && meta.text.trim()) {
             txtContent += `\n==================================================\n`;
@@ -523,16 +651,44 @@ function extractWorkspaceFile(jsonPath, outputDir, options = {}) {
     history.forEach((item, index) => {
         const shortId = item.id ? item.id.substring(0, 8) : `item_${index}`;
 
+        // Normalize grounding sources if present
+        let normalizedGroundingSources = undefined;
+        const rawSources = item.groundingSources || item.grounding?.sources;
+        if (Array.isArray(rawSources) && rawSources.length > 0) {
+            normalizedGroundingSources = rawSources
+                .map(s => ({
+                    title: typeof s?.title === 'string' ? s.title : '',
+                    url: typeof s?.url === 'string' ? s.url : (typeof s?.uri === 'string' ? s.uri : '')
+                }))
+                .filter(s => s.title || s.url);
+        }
+
+        const modelName = item.model || '';
+        // Gemini Nano Banana 2.1 officially does not support temperature (supportsTemperature: false)
+        const is21 = modelName === 'gemini-nano-banana-2.1';
+        const rawTemp = item.temperature !== undefined ? item.temperature : item.metadata?.temperature;
+        const resolvedTemp = is21 ? undefined : rawTemp;
+
+        const rawActual = item.actualOutput || item.metadata?.actualOutput;
+        const resolvedActualOutput = (rawActual && typeof rawActual === 'object')
+            ? (`${rawActual.width && rawActual.height ? `${rawActual.width}x${rawActual.height}` : ''}${rawActual.mimeType ? ` (${rawActual.mimeType})` : ''}`).trim()
+            : (rawActual || '');
+
         const baseMeta = {
             id: item.id,
             prompt: item.prompt || '',
-            model: item.model || '',
+            model: modelName,
             style: item.style || '',
             aspectRatio: item.aspectRatio || '',
-            size: item.size || '',
+            size: item.size || item.metadata?.size || item.metadata?.requestedImageSize || '',
+            outputFormat: item.outputFormat || item.metadata?.outputFormat || '',
+            actualOutput: resolvedActualOutput,
             mode: item.mode || '',
             executionMode: item.executionMode || item.metadata?.executionMode || '',
-            temperature: item.temperature !== undefined ? item.temperature : item.metadata?.temperature,
+            lineageAction: item.lineageAction || item.metadata?.lineageAction || '',
+            groundingMode: item.groundingMode || item.grounding?.mode || '',
+            groundingSources: normalizedGroundingSources,
+            temperature: resolvedTemp,
             thinkingLevel: item.thinkingLevel || item.metadata?.thinkingLevel,
             createdAt: item.createdAt || null,
             text: item.text || '',
@@ -671,5 +827,7 @@ module.exports = {
     formatParametersText,
     extractWorkspaceFile,
     parseWorkspaceJsonBuffer,
+    truncateUtf8BufferSafely,
+    serializeMetaForJpegCom,
     crc32,
 };
